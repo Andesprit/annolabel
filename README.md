@@ -37,7 +37,16 @@ Runtime dependencies are Pillow and Pydantic. LabelKit itself requires no API ke
 
 ### Install with uv
 
-Install the CLI directly from the tagged GitHub version:
+After the first PyPI release is published, install without Git or GitHub authentication:
+
+```sh
+uv tool install andesprit-labelkit
+labelkit --help
+```
+
+The distribution name is `andesprit-labelkit`; the executable remains `labelkit`. PyPI's `labelkit` name belongs to an unrelated project. See [publishing instructions](docs/publishing.md) for release setup and status.
+
+You can also install the existing tagged version directly from Git:
 
 ```sh
 uv tool install 'git+https://github.com/Andesprit/labelkit.git@v0.4.1'
@@ -49,7 +58,7 @@ The command is **`uv tool install`**, not `uv install`. It installs an isolated 
 
 The repository is private, so Git must be authenticated with an account that has access. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
 
-LabelKit has not been published to PyPI; use the Git URL above rather than assuming `uv tool install labelkit` or `pip install labelkit` refers to this project.
+Use `andesprit-labelkit` when installing from PyPI; `uv tool install labelkit` and `pip install labelkit` refer to a different project.
 
 ### Clone for the examples or development
 
