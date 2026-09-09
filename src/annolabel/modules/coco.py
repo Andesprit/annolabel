@@ -5,13 +5,20 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from annolabel.modules.images import load_image
 from annolabel.schemas.annotations import Document
+from annolabel.services.images.base import ImageServiceBase
 
 
 def export_coco(items: list[tuple[Path, Document]], output: str,
-                categories: list[str] | None = None) -> dict:
-    """Write a portable dataset into a new output directory."""
+                categories: list[str] | None = None, *, image_service: ImageServiceBase) -> dict:
+    """Write a portable dataset into a new output directory.
+
+    :param items: Validated sources and annotation documents.
+    :param output: New dataset directory.
+    :param categories: Optional ordered vocabulary shared across splits.
+    :param image_service: Source reader supplied by the core facade.
+    :returns: Dataset paths and annotation counts.
+    """
     destination = Path(output).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("export output already exists; choose a new directory")
@@ -38,7 +45,7 @@ def export_coco(items: list[tuple[Path, Document]], output: str,
         image_dir.mkdir(parents=True)
         (temporary / "annotations").mkdir()
         for image_id, (source, doc) in enumerate(items, 1):
-            image, info = load_image(source)
+            image, info = image_service.load(source)
             if info != doc.image:
                 raise ValueError(f"source image changed during export: {source}")
             filename = f"{image_id:06d}.png"

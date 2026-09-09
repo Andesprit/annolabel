@@ -53,3 +53,9 @@ Run `uv run --project <ANNOLABEL_DIR> annolabel export <IMAGE_OR_SOURCE_FOLDER> 
 The export contains `annotations/instances_default.json` and oriented PNGs under `images/default/`. Each object has one record combining its box and polygon. Whole-image labels are preserved in `classifications.csv`, and original IDs and notes in `provenance.json`. Reuse the emitted `categories.json` via `--categories` when exporting separate splits, so category IDs match. Export does not invent a train/validation split.
 
 Read legacy sidecars normally, but link known box/polygon pairs before export. Do not assume equal class names mean equal object identity.
+
+## Developing AnnoLabel
+
+Keep CLI parsing in `main.py`, facade/service wiring in `core/`, annotation and rendering logic in `modules/`, Pydantic contracts in `schemas/`, and external connections in `services/<name>/base.py` plus an implementation. Core may instantiate concrete services; modules depend only on their base contracts. Lower layers must not import core or the CLI. Keep `__init__.py` files empty unless exports are explicitly needed.
+
+Tests mirror the package paths: `tests/test_main.py`, `tests/core/`, `tests/modules/`, `tests/schemas/`, and `tests/services/<name>/`. Put shared fixtures in `tests/conftest.py` and helper functions in `tests/helpers.py`; do not import one test module from another. Mocks are allowed, particularly for injected service failures and filesystem error paths. Preserve meaningful real CLI/image coverage. Run `uv run pytest -q` and validate the built CLI before release.

@@ -3,16 +3,23 @@ import os
 import tempfile
 from pathlib import Path
 from uuid import uuid4
-from annolabel.modules.images import load_image, polygon_mask, render
+from annolabel.modules.images import polygon_mask, render
 from annolabel.schemas.annotations import Annotation, Document, Point
+from annolabel.services.images.base import ImageServiceBase
+from annolabel.services.images.local import LocalImageService
 
 
 class AnnoLabel:
-    """Open an image and its optional sidecar without modifying either."""
-    def __init__(self, image_path: str) -> None:
+    """Open an image and its optional sidecar without modifying either.
+
+    :param image_path: Source image filename.
+    :param image_service: Image reader; defaults to the local Pillow service.
+    """
+    def __init__(self, image_path: str, *, image_service: ImageServiceBase | None = None) -> None:
+        self.image_service = image_service if image_service is not None else LocalImageService()
         self.path = Path(image_path).expanduser().resolve(strict=True)
         self.sidecar = self.path.with_name(self.path.name + ".labels.json")
-        self.image, info = load_image(self.path)
+        self.image, info = self.image_service.load(self.path)
         if self.sidecar.exists():
             self.document = Document.model_validate_json(self.sidecar.read_text())
             if self.document.image != info:

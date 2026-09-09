@@ -1,29 +1,12 @@
 """End-to-end checks against real images and the public CLI."""
 import hashlib
 import json
-import subprocess
-import sys
 from pathlib import Path
+from unittest.mock import patch
 import pytest
 from PIL import Image
-
-
-def cli(*args: object, success: bool = True) -> dict:
-    result = subprocess.run([sys.executable, "-m", "annolabel.main", *map(str, args)],
-                            text=True, capture_output=True)
-    assert result.returncode == (0 if success else 2), result.stderr
-    if success:
-        assert not result.stderr
-        return json.loads(result.stdout)
-    assert not result.stdout
-    return json.loads(result.stderr)
-
-
-@pytest.fixture
-def source(tmp_path: Path) -> Path:
-    path = tmp_path / "image with spaces.png"
-    Image.new("RGB", (100, 80), "white").save(path)
-    return path
+from annolabel.core.annolabel import AnnoLabel
+from tests.helpers import cli
 
 
 def test_full_annotation_and_correction_workflow(source: Path, tmp_path: Path) -> None:
@@ -120,3 +103,16 @@ def test_points_file_and_corrupt_sidecar(source: Path, tmp_path: Path) -> None:
     sidecar.write_text("{}")
     cli("label", source, "--label", "new", success=False)
     assert sidecar.read_text() == "{}"
+
+
+def test_failed_replace_preserves_file_and_in_memory_snapshot(source: Path) -> None:
+    kit = AnnoLabel(str(source))
+    kit.annotate("label", "keep", [])
+    before = kit.sidecar.read_bytes()
+    document = kit.document.model_copy(deep=True)
+    with patch("annolabel.core.annolabel.os.replace", side_effect=OSError("disk failure")):
+        with pytest.raises(OSError, match="disk failure"):
+            kit.annotate("box", "new", [(10, 10), (30, 30)])
+    assert kit.sidecar.read_bytes() == before
+    assert kit.document == document
+    assert not list(source.parent.glob(".annolabel-*"))
