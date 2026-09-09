@@ -4,12 +4,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageDraw
 from pycocotools.coco import COCO
-from test_cli import cli, source
-
-
-def save(path: Path, value: object) -> Path:
-    path.write_text(json.dumps(value))
-    return path
+from tests.helpers import cli, save
 
 
 def prepared(source: Path, tmp_path: Path) -> tuple[dict, dict]:

@@ -3,8 +3,7 @@ import json
 from pathlib import Path
 import pytest
 from PIL import Image, ImageOps
-from test_cli import cli, source
-from test_workflow import save
+from tests.helpers import cli, save
 
 
 def submission() -> dict:

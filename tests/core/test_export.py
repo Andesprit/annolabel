@@ -2,10 +2,14 @@
 import csv
 import json
 from pathlib import Path
+from unittest.mock import create_autospec
 import pytest
 from PIL import Image
 from pycocotools.coco import COCO
-from test_cli import cli
+from annolabel.core.export import export_dataset
+from annolabel.services.images.base import ImageServiceBase
+from annolabel.services.images.local import LocalImageService
+from tests.helpers import cli
 
 
 def source_at(path: Path) -> Path:
@@ -148,3 +152,14 @@ def test_empty_images_and_stale_sources(tmp_path: Path) -> None:
     Image.new("RGB", (100, 80), "black").save(source)
     cli("export", source, "-o", tmp_path / "stale", success=False)
     assert not (tmp_path / "stale").exists()
+
+
+def test_injected_reader_failure_during_export_leaves_no_dataset(source: Path, tmp_path: Path) -> None:
+    service = create_autospec(ImageServiceBase, instance=True)
+    service.load.side_effect = [LocalImageService().load(source), OSError("source became unavailable")]
+    output = tmp_path / "dataset"
+    with pytest.raises(OSError, match="source became unavailable"):
+        export_dataset(str(source), str(output), image_service=service)
+    assert service.load.call_count == 2
+    assert not output.exists()
+    assert not list(tmp_path.glob(".annolabel-export-*"))

@@ -45,7 +45,7 @@ class Workflow(AnnoLabel):
                               short=short, extra_files=extra_files)
         try:
             # Optimistic stale edit detection, not a lock: keep one writer per image.
-            if revision(AnnoLabel(str(self.path)).document) != revision(self.document):
+            if revision(AnnoLabel(str(self.path), image_service=self.image_service).document) != revision(self.document):
                 raise ValueError("source annotations changed during apply; prepare again")
             self._save(document.annotations)
         except Exception:
