@@ -27,18 +27,16 @@ Astra annotated the 12 prominent objects in this image using AnnoLabel: one anno
 
 ## Install
 
-With [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git installed, run:
+With [uv](https://docs.astral.sh/uv/getting-started/installation/) installed, run:
 
 ```sh
-uv tool install git+https://github.com/Andesprit/annolabel.git
+uv tool install annolabel
 annolabel --help
 ```
 
-No cloning or GitHub login is needed. Requires Python 3.11 or later.
+Installs from [PyPI](https://pypi.org/project/annolabel/). Requires Python 3.11 or later; Git is not needed.
 
 If your shell cannot find `annolabel`, run `uv tool update-shell` and restart the shell.
-
-The PyPI release is pending, so use the GitHub command above for now.
 
 ## Run the included example
 

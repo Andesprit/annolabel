@@ -4,6 +4,8 @@ Distribution: `annolabel`. CLI and module: `annolabel`.
 
 Version **0.5.0** is the first release under the AnnoLabel name. The earlier distribution, `andesprit-labelkit` 0.4.2, remains available under its original name. Historical version tags identify those original releases.
 
+AnnoLabel **0.5.0 is published**: [PyPI release](https://pypi.org/project/annolabel/0.5.0/), [successful release workflow](https://github.com/Andesprit/annolabel/actions/runs/34382545772). Trusted publishing is configured with the settings below; the one-time setup is complete.
+
 ## One-time setup
 
 Configure a pending trusted publisher on the PyPI account that will own the project:
