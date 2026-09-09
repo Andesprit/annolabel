@@ -3,11 +3,11 @@ import os
 import tempfile
 from pathlib import Path
 from uuid import uuid4
-from labelkit.modules.images import load_image, polygon_mask, render
-from labelkit.schemas.annotations import Annotation, Document, Point
+from annolabel.modules.images import load_image, polygon_mask, render
+from annolabel.schemas.annotations import Annotation, Document, Point
 
 
-class LabelKit:
+class AnnoLabel:
     """Open an image and its optional sidecar without modifying either."""
     def __init__(self, image_path: str) -> None:
         self.path = Path(image_path).expanduser().resolve(strict=True)
@@ -28,7 +28,7 @@ class LabelKit:
     def _save(self, annotations: list[Annotation]) -> None:
         document = Document(image=self.document.image, annotations=annotations)
         # Same-directory replace prevents partially written annotation documents.
-        fd, temporary = tempfile.mkstemp(prefix=".labelkit-", dir=self.sidecar.parent)
+        fd, temporary = tempfile.mkstemp(prefix=".annolabel-", dir=self.sidecar.parent)
         try:
             with os.fdopen(fd, "w") as handle:
                 handle.write(document.model_dump_json(indent=2) + "\n")

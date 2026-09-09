@@ -1,7 +1,7 @@
 """Task handles keep persistence metadata out of agent submissions."""
 from typing import Literal
 from pydantic import Field
-from labelkit.schemas.workflow import ClassificationInput, ObjectInput, StrictModel
+from annolabel.schemas.workflow import ClassificationInput, ObjectInput, StrictModel
 
 
 class Submission(StrictModel):

@@ -3,10 +3,10 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
-from labelkit.core.workflow import Workflow
-from labelkit.modules.batch import batch_document, revision
-from labelkit.schemas.task import Submission, TaskHandle
-from labelkit.schemas.workflow import Batch
+from annolabel.core.workflow import Workflow
+from annolabel.modules.batch import batch_document, revision
+from annolabel.schemas.task import Submission, TaskHandle
+from annolabel.schemas.workflow import Batch
 
 
 class TaskError(ValueError):
@@ -71,7 +71,7 @@ class Task:
             receipt = json.loads((self.next_dir/"receipt.json").read_text())
             if receipt["submission_sha256"] != digest:
                 raise TaskError("CHECKPOINT_USED", "This checkpoint already saved a different submission.",
-                                f"Run labelkit task-status {self.path} and use the returned task for a correction.")
+                                f"Run annolabel task-status {self.path} and use the returned task for a correction.")
             self._check_current(receipt["saved_revision"])
             return receipt["result"]
         if self.handle.pass_count >= self.handle.max_passes:

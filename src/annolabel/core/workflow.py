@@ -4,13 +4,13 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 from pydantic import TypeAdapter
-from labelkit.core.labelkit import LabelKit
-from labelkit.modules.batch import batch_document, check_packet, revision
-from labelkit.modules.views import write_bundle
-from labelkit.schemas.workflow import Batch, Packet, Region, Rules
+from annolabel.core.annolabel import AnnoLabel
+from annolabel.modules.batch import batch_document, check_packet, revision
+from annolabel.modules.views import write_bundle
+from annolabel.schemas.workflow import Batch, Packet, Region, Rules
 
 
-class Workflow(LabelKit):
+class Workflow(AnnoLabel):
     """Agent workflow facade over the existing annotation sidecars."""
 
     def _packet(self, path: str | None) -> Packet | None:
@@ -45,7 +45,7 @@ class Workflow(LabelKit):
                               short=short, extra_files=extra_files)
         try:
             # Optimistic stale edit detection, not a lock: keep one writer per image.
-            if revision(LabelKit(str(self.path)).document) != revision(self.document):
+            if revision(AnnoLabel(str(self.path)).document) != revision(self.document):
                 raise ValueError("source annotations changed during apply; prepare again")
             self._save(document.annotations)
         except Exception:
@@ -58,4 +58,4 @@ class Workflow(LabelKit):
     def default_review_output(self, file: str) -> str:
         """Place generated reviews beside the batch file, outside its source inputs."""
         parent = Path(file).expanduser().absolute().parent if file != "-" else Path.cwd()
-        return str(parent / "labelkit-reviews" / f"{self.path.stem}-{uuid4().hex[:8]}")
+        return str(parent / "annolabel-reviews" / f"{self.path.stem}-{uuid4().hex[:8]}")

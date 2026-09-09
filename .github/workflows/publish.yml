@@ -37,9 +37,9 @@ jobs:
       - name: Check package metadata and description
         run: uvx twine check --strict dist/*
       - name: Smoke test the wheel
-        run: uv run --isolated --no-project --with ./dist/*.whl labelkit --version
+        run: uv run --isolated --no-project --with ./dist/*.whl annolabel --version
       - name: Smoke test the source distribution
-        run: uv run --isolated --no-project --with ./dist/*.tar.gz labelkit --version
+        run: uv run --isolated --no-project --with ./dist/*.tar.gz annolabel --version
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distributions

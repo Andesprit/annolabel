@@ -1,8 +1,8 @@
 """Pure snapshot conversion; validated once before persistence."""
 import hashlib
 from uuid import NAMESPACE_URL, uuid5
-from labelkit.schemas.annotations import Annotation, Document
-from labelkit.schemas.workflow import Batch, Packet
+from annolabel.schemas.annotations import Annotation, Document
+from annolabel.schemas.workflow import Batch, Packet
 
 
 def revision(document: Document) -> str:
@@ -50,6 +50,7 @@ def batch_document(batch: Batch, document: Document, packet: Packet | None = Non
     by_class = {a.label: a.id for a in document.annotations if a.kind == "label"}
 
     def new_id(key: str, kind: str) -> str:
+        # Preserve the historical ID namespace so saved checkpoints survive the rename.
         return uuid5(NAMESPACE_URL, f"labelkit:{document.image.sha256}:{kind}:{key}").hex
 
     annotations = [Annotation(id=by_class.get(c.label) or new_id(c.label, "label"), kind="label",

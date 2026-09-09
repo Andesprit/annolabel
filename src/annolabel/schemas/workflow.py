@@ -1,7 +1,7 @@
 """Agent-facing annotation batches and coordinate view contracts."""
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
-from labelkit.schemas.annotations import Point
+from annolabel.schemas.annotations import Point
 
 
 class StrictModel(BaseModel):

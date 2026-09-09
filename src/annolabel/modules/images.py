@@ -2,7 +2,7 @@
 import hashlib
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from labelkit.schemas.annotations import Document, ImageInfo
+from annolabel.schemas.annotations import Document, ImageInfo
 
 
 def load_image(path: Path) -> tuple[Image.Image, ImageInfo]:
