@@ -3,11 +3,11 @@
 Replace every angle-bracket placeholder before giving this to your agent. Provide the research instructions in this prompt, even when also saving them with `--instructions`.
 
 ```text
-Label <ABSOLUTE_IMAGE_PATH> with LabelKit installed at <ABSOLUTE_LABELKIT_DIR>.
+Label <ABSOLUTE_IMAGE_PATH> with AnnoLabel installed at <ABSOLUTE_ANNOLABEL_DIR>.
 Researcher instructions: <WHAT_TO_LABEL_AND_BOUNDARY_POLICY>.
 Allowed object labels: <LABELS_OR_FREE_FORM>.
 
-Use: uv run --project <ABSOLUTE_LABELKIT_DIR> labelkit
+Use: uv run --project <ABSOLUTE_ANNOLABEL_DIR> annolabel
 Create a task in <NEW_ABSOLUTE_TASK_DIR> with the appropriate --geometry mode.
 Open its returned view using your image tool. Coordinates are original oriented
 pixels: (0,0) at top-left, x right, y down. No padding or coordinate offset.

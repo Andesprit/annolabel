@@ -4,15 +4,15 @@ import json
 import sys
 from pathlib import Path
 from pydantic import ValidationError
-from labelkit.core.labelkit import LabelKit
-from labelkit.core.export import export_dataset
-from labelkit.core.workflow import Workflow
-from labelkit.core.task import Task, TaskError, start_task
+from annolabel.core.annolabel import AnnoLabel
+from annolabel.core.export import export_dataset
+from annolabel.core.workflow import Workflow
+from annolabel.core.task import Task, TaskError, start_task
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Annotate images directly. No model calls. JSON results on stdout.")
-    parser.add_argument("--version", action="version", version="labelkit 0.4.2")
+    parser.add_argument("--version", action="version", version="annolabel 0.5.0")
     commands = parser.add_subparsers(dest="command", required=True)
     task = commands.add_parser("task", help="Start a short annotation task with a coordinate view and saved handle")
     task.add_argument("image")
@@ -120,7 +120,7 @@ def main() -> None:
             result = export_dataset(args.source, args.output, args.categories)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
-        kit = LabelKit(args.image)
+        kit = AnnoLabel(args.image)
         if args.command == "info":
             result = kit.info()
         elif args.command in {"label", "box", "polygon"}:

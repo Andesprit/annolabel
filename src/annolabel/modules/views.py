@@ -7,9 +7,9 @@ import tempfile
 import textwrap
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-from labelkit.modules.batch import snapshot
-from labelkit.schemas.annotations import Document
-from labelkit.schemas.workflow import Batch, Packet, Region, Rules, View
+from annolabel.modules.batch import snapshot
+from annolabel.schemas.annotations import Document
+from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
 MARGIN_X, MARGIN_Y = 58, 50
 COLORS = ["#f43f5e", "#00a6ff", "#f59e0b", "#16a34a", "#a855f7", "#06b6d4"]
@@ -98,7 +98,7 @@ def write_bundle(image: Image.Image, document: Document, output: str, *,
                 min(image.width, math.ceil(x2+px)), min(image.height, math.ceil(y2+py)))
         selected.append((key, label, crop))
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".labelkit-views-", dir=destination.parent))
+    temporary = Path(tempfile.mkdtemp(prefix=".annolabel-views-", dir=destination.parent))
     packet = Packet(image_sha256=document.image.sha256, width=image.width, height=image.height, rules=rules)
     pages = []
     try:
@@ -162,7 +162,7 @@ def write_bundle(image: Image.Image, document: Document, output: str, *,
         (temporary/"annotations.json").write_text(json.dumps(snapshot(document), indent=2)+"\n")
         (temporary/"schema.json").write_text(json.dumps(Batch.model_json_schema(), indent=2)+"\n")
         guide = (
-            "You supply visual interpretation; LabelKit never runs inference.\n"
+            "You supply visual interpretation; AnnoLabel never runs inference.\n"
             "Open original.png first. Ruler numbers in grid/review PNGs are ORIGINAL EXIF-oriented pixel coordinates.\n"
             "x increases right; y increases down; bounds include width/height outer edges. Do not use resized viewer pixels.\n"
             "Edit annotations.json as a COMPLETE snapshot: omitted objects/classes are removed. Keep image_sha256 and base_revision.\n"
@@ -181,7 +181,7 @@ def write_bundle(image: Image.Image, document: Document, output: str, *,
         )
         if short:
             guide = (
-                "You supply visual interpretation; LabelKit never runs inference.\n"
+                "You supply visual interpretation; AnnoLabel never runs inference.\n"
                 f"Open view.png: {image.width} x {image.height} EXIF-oriented source pixels, with no padding, grid or resizing.\n"
                 "The top-left image corner is (0,0); x increases right and y down. Use source pixels, not resized viewer pixels.\n"
                 "Submit task.json --file JSON_OR_- with classifications and objects as a COMPLETE snapshot.\n"

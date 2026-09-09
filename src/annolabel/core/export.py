@@ -1,8 +1,8 @@
 """Resolve source files and invoke the default dataset exporter."""
 import json
 from pathlib import Path
-from labelkit.core.labelkit import LabelKit
-from labelkit.modules.coco import export_coco
+from annolabel.core.annolabel import AnnoLabel
+from annolabel.modules.coco import export_coco
 
 
 def export_dataset(source: str, output: str, categories_file: str | None = None) -> dict:
@@ -22,7 +22,7 @@ def export_dataset(source: str, output: str, categories_file: str | None = None)
         if resolved in seen:
             continue
         seen.add(resolved)
-        kit = LabelKit(str(resolved))
+        kit = AnnoLabel(str(resolved))
         items.append((kit.path, kit.document))
     categories = None
     if categories_file:

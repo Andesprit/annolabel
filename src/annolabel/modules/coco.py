@@ -5,8 +5,8 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from labelkit.modules.images import load_image
-from labelkit.schemas.annotations import Document
+from annolabel.modules.images import load_image
+from annolabel.schemas.annotations import Document
 
 
 def export_coco(items: list[tuple[Path, Document]], output: str,
@@ -32,7 +32,7 @@ def export_coco(items: list[tuple[Path, Document]], output: str,
     provenance = {"images": [], "objects": []}
     classifications = []
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".labelkit-export-", dir=destination.parent))
+    temporary = Path(tempfile.mkdtemp(prefix=".annolabel-export-", dir=destination.parent))
     try:
         image_dir = temporary / "images/default"
         image_dir.mkdir(parents=True)

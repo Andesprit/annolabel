@@ -9,7 +9,7 @@ from PIL import Image
 
 
 def cli(*args: object, success: bool = True) -> dict:
-    result = subprocess.run([sys.executable, "-m", "labelkit.main", *map(str, args)],
+    result = subprocess.run([sys.executable, "-m", "annolabel.main", *map(str, args)],
                             text=True, capture_output=True)
     assert result.returncode == (0 if success else 2), result.stderr
     if success:

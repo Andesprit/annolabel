@@ -1,14 +1,14 @@
-# LabelKit
+# AnnoLabel
 
 **A local image-labeling CLI for vision-capable agents.**
 
-Give an agent an image and a labeling task. The agent inspects the pixels and supplies scene labels, bounding boxes, and segmentation polygons. LabelKit validates the geometry, stores annotations, renders review images, and exports a training dataset in **COCO format by default**.
+Give an agent an image and a labeling task. The agent inspects the pixels and supplies scene labels, bounding boxes, and segmentation polygons. AnnoLabel validates the geometry, stores annotations, renders review images, and exports a training dataset in **COCO format by default**.
 
-LabelKit does not call an LLM or infer object boundaries. Use it from Codex, Claude Code, Gemini/Antigravity, or any agent that can **open images and run shell commands**. Your chosen agent supplies the vision; LabelKit supplies the annotation tools.
+AnnoLabel does not call an LLM or infer object boundaries. Use it from Codex, Claude Code, Gemini/Antigravity, or any agent that can **open images and run shell commands**. Your chosen agent supplies the vision; AnnoLabel supplies the annotation tools.
 
 ![Astra-generated bounding boxes and silhouette polygons on an underwater image](docs/images/astra-photo-annotated.png)
 
-Astra annotated the 12 prominent objects in this image using LabelKit: one annotation pass, one visual review, and no correction. The agent chose the geometry; LabelKit validated and rendered it. Boundaries remain approximate. [View the original image](docs/images/astra-photo-original.png).
+Astra annotated the 12 prominent objects in this image using AnnoLabel: one annotation pass, one visual review, and no correction. The agent chose the geometry; AnnoLabel validated and rendered it. Boundaries remain approximate. [View the original image](docs/images/astra-photo-original.png).
 
 ## Contents
 
@@ -33,59 +33,63 @@ Requirements:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/). Git is only needed for installing from GitHub or working on the source.
 - An image-capable agent with access to your image files and a shell, if you want the agent to label them.
 
-Runtime dependencies are Pillow and Pydantic. LabelKit itself requires no API keys, model downloads, GPU, or labeling service. Your agent uses its own authentication and may send images to its model provider.
+Runtime dependencies are Pillow and Pydantic. AnnoLabel itself requires no API keys, model downloads, GPU, or labeling service. Your agent uses its own authentication and may send images to its model provider.
 
 ### Install with uv
 
-Install from [PyPI](https://pypi.org/project/andesprit-labelkit/) without cloning, Git, or GitHub authentication:
+Install from [PyPI](https://pypi.org/project/annolabel/) without cloning, Git, or GitHub authentication:
 
 ```sh
-uv tool install andesprit-labelkit
-labelkit --help
+uv tool install annolabel
+annolabel --help
 ```
 
-The distribution name is `andesprit-labelkit`; the executable remains `labelkit`. PyPI's `labelkit` name belongs to an unrelated project. To update, run `uv tool upgrade andesprit-labelkit`. See [publishing instructions](docs/publishing.md) for future releases.
+The package, executable, and Python module are all named `annolabel`. To update, run `uv tool upgrade annolabel`. See [publishing instructions](docs/publishing.md) for future releases.
 
 You can also install the tagged version directly from Git:
 
 ```sh
-uv tool install 'git+https://github.com/Andesprit/labelkit.git@v0.4.2'
-labelkit --version
-labelkit --help
+uv tool install 'git+https://github.com/Andesprit/annolabel.git@v0.5.0'
+annolabel --version
+annolabel --help
 ```
 
-The command is **`uv tool install`**, not `uv install`. It installs an isolated CLI environment and puts `labelkit` on your executable path. A separate clone is unnecessary for this installation.
+The command is **`uv tool install`**, not `uv install`. It installs an isolated CLI environment and puts `annolabel` on your executable path. A separate clone is unnecessary for this installation.
 
 Only the Git installation requires an authenticated account with access to the private repository. The PyPI installation is public. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
 
-Use `andesprit-labelkit` when installing from PyPI; `uv tool install labelkit` and `pip install labelkit` refer to a different project.
+### Upgrading from the previous name
+
+AnnoLabel was previously published as `andesprit-labelkit`. Install `annolabel` and replace the old `labelkit` command with `annolabel` in your agent prompts and scripts. Python imports now use `annolabel`, and the core facade is `AnnoLabel` in `annolabel.core.annolabel`.
+
+Existing `.labels.json` annotations, task handles, object IDs, and COCO datasets remain compatible. Keep active task directories in place. After switching your scripts, you can remove the previous installation with `uv tool uninstall andesprit-labelkit`. Existing releases remain available under their original name.
 
 ### Clone for the examples or development
 
 ```sh
-git clone https://github.com/Andesprit/labelkit.git
-cd labelkit
+git clone https://github.com/Andesprit/annolabel.git
+cd annolabel
 uv sync --locked
-uv run labelkit --version
-uv run labelkit --help
+uv run annolabel --version
+uv run annolabel --help
 ```
 
-`uv sync` installs the development group as well, including pytest and pycocotools. To install only runtime dependencies, use `uv sync --locked --no-dev`, then `uv run --no-dev labelkit --help`.
+`uv sync` installs the development group as well, including pytest and pycocotools. To install only runtime dependencies, use `uv sync --locked --no-dev`, then `uv run --no-dev annolabel --help`.
 
 From another directory, point uv at the checkout:
 
 ```sh
-uv run --project /absolute/path/to/labelkit labelkit info /absolute/path/to/photo.jpg
+uv run --project /absolute/path/to/annolabel annolabel info /absolute/path/to/photo.jpg
 ```
 
 You can also install the CLI from a local clone:
 
 ```sh
 uv tool install .
-labelkit --help
+annolabel --help
 ```
 
-The rest of this README uses `uv run labelkit` from the checkout. Replace that prefix with `labelkit` after a tool installation, or with `uv run --project /absolute/path/to/labelkit labelkit` from another working directory. Shell examples use POSIX syntax; on PowerShell, use file-based JSON submissions rather than heredocs.
+The rest of this README uses `uv run annolabel` from the checkout. Replace that prefix with `annolabel` after a tool installation, or with `uv run --project /absolute/path/to/annolabel annolabel` from another working directory. Shell examples use POSIX syntax; on PowerShell, use file-based JSON submissions rather than heredocs.
 
 ## Run the included example
 
@@ -97,15 +101,15 @@ Run these commands from a fresh clone. The example uses a bundled image and hand
 mkdir -p work/demo/input
 cp examples/shapes.png work/demo/input/shapes.png
 
-uv run labelkit task work/demo/input/shapes.png \
+uv run annolabel task work/demo/input/shapes.png \
   --output work/demo/task \
   --instructions examples/shapes-task.txt \
   --categories examples/shapes-categories.json
 
-uv run labelkit submit work/demo/task/task.json \
+uv run annolabel submit work/demo/task/task.json \
   --file examples/shapes-submission.json
 
-uv run labelkit export work/demo/input --output work/demo/coco
+uv run annolabel export work/demo/input --output work/demo/coco
 ```
 
 Open `work/demo/task/view.png` before submitting to see the original, and `work/demo/task/pass1/view.png` afterward to review the outlines. The example produces two objects, each with a bounding box and polygon, plus one scene classification.
@@ -139,9 +143,9 @@ Output directories must be new. To repeat the example, use a new directory such 
 
 ### Recommended workflow: task → submit → review → optional correction
 
-1. Start a task for one image with `labelkit task`.
+1. Start a task for one image with `annolabel task`.
 2. Open the returned `view` with the agent's image tool.
-3. Submit all scene labels and objects together using `labelkit submit`.
+3. Submit all scene labels and objects together using `annolabel submit`.
 4. Open the returned review `view` and check labels, omissions, boxes, and silhouettes.
 5. If necessary, submit one corrected complete snapshot using the **new task handle**. Report unresolved uncertainty.
 6. Export the image or its source folder as COCO.
@@ -153,7 +157,7 @@ Task views have the exact EXIF-oriented source dimensions: **no padding, rulers,
 Replace the paths and researcher instructions below. Supply the prompt to Codex, Claude Code, Gemini/Antigravity, or your preferred vision-capable agent:
 
 ```text
-Use LabelKit at /absolute/path/to/labelkit to label
+Use AnnoLabel at /absolute/path/to/annolabel to label
 /absolute/path/to/images/photo.jpg.
 
 Researcher task: classify the scene and label every prominent foreground
@@ -161,7 +165,7 @@ object with a tight bounding box and a polygon tracing its visible silhouette.
 Exclude tiny background objects. Describe appearance and note uncertain identity.
 
 Run commands with:
-uv run --project /absolute/path/to/labelkit labelkit
+uv run --project /absolute/path/to/annolabel annolabel
 
 Create a task in /absolute/path/to/work/photo-task with --geometry both.
 Open the returned view with your image tool. Use its original pixel dimensions:
@@ -177,7 +181,7 @@ retaining every unchanged object and class. Stop after that correction and
 report uncertainty. If output is lost, use task-status on the initial handle.
 
 Use your own vision. Do not call detectors or segmentation models, inspect
-implementation code, or write crop/CLI helper scripts. LabelKit supplies those
+implementation code, or write crop/CLI helper scripts. AnnoLabel supplies those
 operations. Export COCO to /absolute/path/to/work/photo-coco and report paths.
 ```
 
@@ -186,7 +190,7 @@ For reusable instructions, point your agent at [AGENTS.md](AGENTS.md) and [docs/
 ### Supply research instructions and categories
 
 ```sh
-uv run labelkit task /data/images/photo.jpg \
+uv run annolabel task /data/images/photo.jpg \
   --output /data/work/photo-task \
   --instructions /data/labeling-instructions.txt \
   --categories /data/categories.json \
@@ -251,7 +255,7 @@ A successful submission returns a compact receipt resembling:
 Open that `view`, then submit a corrected full snapshot only if needed:
 
 ```sh
-uv run labelkit submit /data/work/photo-task/pass1/task.json \
+uv run annolabel submit /data/work/photo-task/pass1/task.json \
   --file /data/work/corrected-labels.json
 ```
 
@@ -260,7 +264,7 @@ Use the returned handle, rather than guessing paths. A second submission returns
 If a command response is lost, recover the latest committed handle and view:
 
 ```sh
-uv run labelkit task-status /data/work/photo-task/task.json
+uv run annolabel task-status /data/work/photo-task/task.json
 ```
 
 An identical retry against the same checkpoint replays its saved receipt while its saved revision remains current. A different payload against a consumed checkpoint requires the next handle. If another writer has changed the source or labels, stop and reconcile the change before creating a new task.
@@ -274,7 +278,7 @@ The pass limit applies to this task chain. It is not a limit on agent tool calls
 For a single class addition:
 
 ```sh
-uv run labelkit label /data/images/photo.jpg --label indoor \
+uv run annolabel label /data/images/photo.jpg --label indoor \
   --note "Scene classification"
 ```
 
@@ -289,7 +293,7 @@ The latter removes any existing object annotations. Use the individual `label` c
 ### Bounding boxes only
 
 ```sh
-uv run labelkit task /data/images/photo.jpg \
+uv run annolabel task /data/images/photo.jpg \
   --output /data/work/boxes-task --geometry boxes
 ```
 
@@ -299,18 +303,18 @@ Ask the agent to supply boxes without polygons:
 {"classifications":[],"objects":[{"key":"car-1","label":"car","box":[50,30,250,180]}]}
 ```
 
-Boxes need fewer coordinate values than polygons. Actual labeling time and accuracy depend on the agent and image; LabelKit does not promise a fixed number of model calls.
+Boxes need fewer coordinate values than polygons. Actual labeling time and accuracy depend on the agent and image; AnnoLabel does not promise a fixed number of model calls.
 
 ### Segmentation polygons
 
-Use the default task mode and submit ordered silhouette vertices. Transparent objects, occlusion, small objects, and fine boundaries need an explicit researcher policy. LabelKit stores the polygon you supply; it does not infer missing details.
+Use the default task mode and submit ordered silhouette vertices. Transparent objects, occlusion, small objects, and fine boundaries need an explicit researcher policy. AnnoLabel stores the polygon you supply; it does not infer missing details.
 
 Export one stored polygon as a binary PNG mask:
 
 ```sh
-uv run labelkit info /data/images/photo.jpg
+uv run annolabel info /data/images/photo.jpg
 # Copy a polygon's annotation id from the response, not its object_id.
-uv run labelkit mask /data/images/photo.jpg \
+uv run annolabel mask /data/images/photo.jpg \
   --id POLYGON_ANNOTATION_ID --output /data/work/object-mask.png
 ```
 
@@ -331,16 +335,16 @@ For a folder, ask your agent to:
 An agent may group two independent submissions into one shell call:
 
 ```sh
-uv run labelkit submit /data/work/image-a/task.json --file /data/work/image-a-labels.json
-uv run labelkit submit /data/work/image-b/task.json --file /data/work/image-b-labels.json
+uv run annolabel submit /data/work/image-a/task.json --file /data/work/image-a-labels.json
+uv run annolabel submit /data/work/image-b/task.json --file /data/work/image-b-labels.json
 ```
 
-These are separate image operations, not one atomic multi-image transaction. Check each command's result: the final shell exit status alone does not establish that both succeeded. Keep **one writer per source image**; concurrent agents can work on different images. Avoid stitching images unless your calling system also handles the coordinate mapping back to each source. LabelKit does not implement LLM batching or image-stitching inference.
+These are separate image operations, not one atomic multi-image transaction. Check each command's result: the final shell exit status alone does not establish that both succeeded. Keep **one writer per source image**; concurrent agents can work on different images. Avoid stitching images unless your calling system also handles the coordinate mapping back to each source. AnnoLabel does not implement LLM batching or image-stitching inference.
 
 ## Export COCO for training
 
 ```sh
-uv run labelkit export /data/images --output /data/datasets/labeled
+uv run annolabel export /data/images --output /data/datasets/labeled
 ```
 
 COCO is currently the only built-in training format; `--format coco` is optional. Folder export discovers `*.labels.json` recursively and excludes images without sidecars. A direct image export may contain zero annotations.
@@ -361,7 +365,7 @@ labeled/
 
 - Point a COCO loader at `annotations/instances_default.json` and use **`images/default/` as its image root**. COCO `file_name` values are relative to that root.
 - Each object exports as one record combining its box and optional polygon.
-- COCO boxes are `[x, y, width, height]`; LabelKit converts them from its input `[x1, y1, x2, y2]` convention.
+- COCO boxes are `[x, y, width, height]`; AnnoLabel converts them from its input `[x1, y1, x2, y2]` convention.
 - Polygons export as COCO polygon segmentations with `iscrowd: 0`. Box-only records omit segmentation.
 - Area is continuous polygon area when available, otherwise box area.
 - Images export as PNGs in their EXIF-oriented annotation coordinate frame.
@@ -373,13 +377,13 @@ labeled/
 Prepare a complete ordered vocabulary shared by all splits, such as `["car", "person", "bicycle"]`, then reuse it:
 
 ```sh
-uv run labelkit export /data/train --output /data/datasets/train \
+uv run annolabel export /data/train --output /data/datasets/train \
   --categories /data/categories.json
-uv run labelkit export /data/validation --output /data/datasets/validation \
+uv run annolabel export /data/validation --output /data/datasets/validation \
   --categories /data/categories.json
 ```
 
-IDs start at 1 in the supplied order. Without a vocabulary, categories are sorted from the labels present in that export. You can reuse an emitted `categories.json`, provided it includes every label used by the later split. Missing labels are rejected. LabelKit does not invent train/validation/test splits.
+IDs start at 1 in the supplied order. Without a vocabulary, categories are sorted from the labels present in that export. You can reuse an emitted `categories.json`, provided it includes every label used by the later split. Missing labels are rejected. AnnoLabel does not invent train/validation/test splits.
 
 For another format, use this COCO export as the interchange dataset for your training system or conversion tool. Conversion can only preserve information represented by its target format; whole-image classes and notes are separate files here.
 
@@ -388,14 +392,14 @@ For another format, use this COCO export as the interchange dataset for your tra
 For larger review budgets, `prepare` / `apply` / `review` expose the full packet, revision snapshot, coordinate grid, and paired original/annotated crops:
 
 ```sh
-uv run labelkit prepare /data/images/photo.jpg \
+uv run annolabel prepare /data/images/photo.jpg \
   --output /data/work/prepared --instructions /data/instructions.txt
 # Open original.png and read guide.txt; edit the returned annotations.json.
 # Keep image_sha256 and base_revision when using apply.
-uv run labelkit apply /data/images/photo.jpg \
+uv run annolabel apply /data/images/photo.jpg \
   --file /data/work/prepared/annotations.json \
   --packet /data/work/prepared/packet.json --output /data/work/review-1
-uv run labelkit review /data/images/photo.jpg \
+uv run annolabel review /data/images/photo.jpg \
   --packet /data/work/review-1/packet.json \
   --output /data/work/extra-review --per-page 2 --padding 0.25
 ```
@@ -407,20 +411,20 @@ Detailed views have padding and original-coordinate rulers. Read the ruler value
 For an arbitrary detail, write a region file such as `[{"key":"detail-1","box":[100,80,300,220]}]`, then:
 
 ```sh
-uv run labelkit review /data/images/photo.jpg \
+uv run annolabel review /data/images/photo.jpg \
   --regions /data/work/regions.json --output /data/work/detail-review
 ```
 
 Small individual additions are also available:
 
 ```sh
-uv run labelkit box /data/images/photo.jpg --label car --xyxy 50 30 250 180
-uv run labelkit polygon /data/images/photo.jpg --label leaf \
+uv run annolabel box /data/images/photo.jpg --label car --xyxy 50 30 250 180
+uv run annolabel polygon /data/images/photo.jpg --label leaf \
   --points '[[25,40],[60,20],[90,45],[60,90]]'
-uv run labelkit render /data/images/photo.jpg --output /data/work/preview.png
+uv run annolabel render /data/images/photo.jpg --output /data/work/preview.png
 ```
 
-These commands add annotations by default. To edit an existing one, use its `--id` with the complete replacement geometry. To attach a second geometry to the same object, use its `--object-id`; to link existing annotations, use `labelkit link IMAGE --ids BOX_ID POLYGON_ID`. Equal class names never imply equal object identity. Use `remove IMAGE --id ANNOTATION_ID` to remove one annotation. Render again and inspect your edit.
+These commands add annotations by default. To edit an existing one, use its `--id` with the complete replacement geometry. To attach a second geometry to the same object, use its `--object-id`; to link existing annotations, use `annolabel link IMAGE --ids BOX_ID POLYGON_ID`. Equal class names never imply equal object identity. Use `remove IMAGE --id ANNOTATION_ID` to remove one annotation. Render again and inspect your edit.
 
 ## Files, recovery, and limitations
 
@@ -451,7 +455,7 @@ Current scope:
 
 ## Command reference
 
-Run `uv run labelkit COMMAND --help` for full arguments.
+Run `uv run annolabel COMMAND --help` for full arguments.
 
 | Command | Purpose |
 |---|---|
@@ -482,7 +486,7 @@ uv build
 The real CLI tests exercise validation, source orientation, stable object identity, correction passes, lost-response recovery, stale edits, masks, and COCO exports. pycocotools is a development dependency used to read exported datasets and decode segmentation masks; runtime annotation and export use Pillow and Pydantic.
 
 ```text
-src/labelkit/
+src/annolabel/
 ├── main.py          # CLI argument parsing and JSON responses
 ├── core/            # Annotation, task, workflow, and export entry points
 ├── modules/         # Geometry/snapshot handling, image views, COCO serialization
