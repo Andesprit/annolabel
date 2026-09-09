@@ -1,8 +1,8 @@
 [project]
-name = "labelkit"
-version = "0.4.1"
+name = "andesprit-labelkit"
+version = "0.4.2"
 description = "Local image annotation primitives for vision-capable agents"
-readme = "README.md"
+readme = "docs/PYPI.md"
 requires-python = ">=3.11"
 dependencies = [
     "pillow>=12.3.0",
@@ -25,3 +25,6 @@ dev = [
     "pycocotools>=2.0.11",
     "pytest>=9.1.1",
 ]
+
+[tool.uv.build-backend]
+module-name = "labelkit"

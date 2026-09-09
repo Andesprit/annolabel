@@ -12,7 +12,7 @@ from labelkit.core.task import Task, TaskError, start_task
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Annotate images directly. No model calls. JSON results on stdout.")
-    parser.add_argument("--version", action="version", version="labelkit 0.4.1")
+    parser.add_argument("--version", action="version", version="labelkit 0.4.2")
     commands = parser.add_subparsers(dest="command", required=True)
     task = commands.add_parser("task", help="Start a short annotation task with a coordinate view and saved handle")
     task.add_argument("image")
