@@ -46,4 +46,4 @@ uv tool install annolabel
 annolabel --version
 ```
 
-The PyPI description lives in `docs/PYPI.md`, with self-contained usage instructions and no images that require private GitHub access. The source repository may remain private; PyPI distributions and their packaged source are public. No repository visibility change is needed.
+The PyPI description lives in `docs/PYPI.md`, with self-contained usage instructions. The source repository and published PyPI distributions are public.

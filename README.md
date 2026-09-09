@@ -56,7 +56,7 @@ annolabel --help
 
 The command is **`uv tool install`**, not `uv install`. It installs an isolated CLI environment and puts `annolabel` on your executable path. A separate clone is unnecessary for this installation.
 
-Only the Git installation requires an authenticated account with access to the private repository. The PyPI installation is public. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
+The GitHub repository is public; cloning and installing from Git require no GitHub authentication. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
 
 ### Upgrading from the previous name
 
