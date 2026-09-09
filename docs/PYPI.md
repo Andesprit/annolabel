@@ -127,4 +127,4 @@ Annotations are stored beside the source as `IMAGE.labels.json`. Output director
 
 Supports single-frame raster images and simple single-component polygons. No polygon holes, multipart instances, keypoints, video, inference engine, or GUI. Geometry validation does not establish visual accuracy: the agent must review the pixels and report uncertainty.
 
-Source repository: [Andesprit/annolabel](https://github.com/Andesprit/annolabel) (repository access may be required).
+Public source repository: [Andesprit/annolabel](https://github.com/Andesprit/annolabel).
