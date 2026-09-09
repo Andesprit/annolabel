@@ -27,89 +27,41 @@ Astra annotated the 12 prominent objects in this image using AnnoLabel: one anno
 
 ## Install
 
-Requirements:
-
-- Python **3.11 or later**. This checkout selects Python 3.14 through `.python-version`.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/). Git is only needed for installing from GitHub or working on the source.
-- An image-capable agent with access to your image files and a shell, if you want the agent to label them.
-
-Runtime dependencies are Pillow and Pydantic. AnnoLabel itself requires no API keys, model downloads, GPU, or labeling service. Your agent uses its own authentication and may send images to its model provider.
-
-### Install with uv
-
-Install from [PyPI](https://pypi.org/project/annolabel/) without cloning, Git, or GitHub authentication:
+With [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git installed, run:
 
 ```sh
-uv tool install annolabel
+uv tool install git+https://github.com/Andesprit/annolabel.git
 annolabel --help
 ```
 
-The package, executable, and Python module are all named `annolabel`. To update, run `uv tool upgrade annolabel`. See [publishing instructions](docs/publishing.md) for future releases.
+No cloning or GitHub login is needed. Requires Python 3.11 or later.
 
-You can also install the tagged version directly from Git:
+If your shell cannot find `annolabel`, run `uv tool update-shell` and restart the shell.
 
-```sh
-uv tool install 'git+https://github.com/Andesprit/annolabel.git@v0.5.0'
-annolabel --version
-annolabel --help
-```
-
-The command is **`uv tool install`**, not `uv install`. It installs an isolated CLI environment and puts `annolabel` on your executable path. A separate clone is unnecessary for this installation.
-
-The GitHub repository is public; cloning and installing from Git require no GitHub authentication. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
-
-### Upgrading from the previous name
-
-AnnoLabel was previously published as `andesprit-labelkit`. Install `annolabel` and replace the old `labelkit` command with `annolabel` in your agent prompts and scripts. Python imports now use `annolabel`, and the core facade is `AnnoLabel` in `annolabel.core.annolabel`.
-
-Existing `.labels.json` annotations, task handles, object IDs, and COCO datasets remain compatible. Keep active task directories in place. After switching your scripts, you can remove the previous installation with `uv tool uninstall andesprit-labelkit`. Existing releases remain available under their original name.
-
-### Clone for the examples or development
-
-```sh
-git clone https://github.com/Andesprit/annolabel.git
-cd annolabel
-uv sync --locked
-uv run annolabel --version
-uv run annolabel --help
-```
-
-`uv sync` installs the development group as well, including pytest and pycocotools. To install only runtime dependencies, use `uv sync --locked --no-dev`, then `uv run --no-dev annolabel --help`.
-
-From another directory, point uv at the checkout:
-
-```sh
-uv run --project /absolute/path/to/annolabel annolabel info /absolute/path/to/photo.jpg
-```
-
-You can also install the CLI from a local clone:
-
-```sh
-uv tool install .
-annolabel --help
-```
-
-The rest of this README uses `uv run annolabel` from the checkout. Replace that prefix with `annolabel` after a tool installation, or with `uv run --project /absolute/path/to/annolabel annolabel` from another working directory. Shell examples use POSIX syntax; on PowerShell, use file-based JSON submissions rather than heredocs.
+The PyPI release is pending, so use the GitHub command above for now.
 
 ## Run the included example
 
 ![Example annotations on two geometric shapes](docs/images/shapes-annotated.png)
 
-Run these commands from a fresh clone. The example uses a bundled image and hand-authored annotations so you can verify the tooling without an LLM.
+After installing the tool, download the example files by cloning the repository. The example uses a bundled image and hand-authored annotations so you can verify the tooling without an LLM.
 
 ```sh
+git clone https://github.com/Andesprit/annolabel.git
+cd annolabel
+
 mkdir -p work/demo/input
 cp examples/shapes.png work/demo/input/shapes.png
 
-uv run annolabel task work/demo/input/shapes.png \
+annolabel task work/demo/input/shapes.png \
   --output work/demo/task \
   --instructions examples/shapes-task.txt \
   --categories examples/shapes-categories.json
 
-uv run annolabel submit work/demo/task/task.json \
+annolabel submit work/demo/task/task.json \
   --file examples/shapes-submission.json
 
-uv run annolabel export work/demo/input --output work/demo/coco
+annolabel export work/demo/input --output work/demo/coco
 ```
 
 Open `work/demo/task/view.png` before submitting to see the original, and `work/demo/task/pass1/view.png` afterward to review the outlines. The example produces two objects, each with a bounding box and polygon, plus one scene classification.
@@ -157,7 +109,7 @@ Task views have the exact EXIF-oriented source dimensions: **no padding, rulers,
 Replace the paths and researcher instructions below. Supply the prompt to Codex, Claude Code, Gemini/Antigravity, or your preferred vision-capable agent:
 
 ```text
-Use AnnoLabel at /absolute/path/to/annolabel to label
+Use the installed AnnoLabel CLI to label
 /absolute/path/to/images/photo.jpg.
 
 Researcher task: classify the scene and label every prominent foreground
@@ -165,7 +117,7 @@ object with a tight bounding box and a polygon tracing its visible silhouette.
 Exclude tiny background objects. Describe appearance and note uncertain identity.
 
 Run commands with:
-uv run --project /absolute/path/to/annolabel annolabel
+annolabel
 
 Create a task in /absolute/path/to/work/photo-task with --geometry both.
 Open the returned view with your image tool. Use its original pixel dimensions:
@@ -190,7 +142,7 @@ For reusable instructions, point your agent at [AGENTS.md](AGENTS.md) and [docs/
 ### Supply research instructions and categories
 
 ```sh
-uv run annolabel task /data/images/photo.jpg \
+annolabel task /data/images/photo.jpg \
   --output /data/work/photo-task \
   --instructions /data/labeling-instructions.txt \
   --categories /data/categories.json \
@@ -255,7 +207,7 @@ A successful submission returns a compact receipt resembling:
 Open that `view`, then submit a corrected full snapshot only if needed:
 
 ```sh
-uv run annolabel submit /data/work/photo-task/pass1/task.json \
+annolabel submit /data/work/photo-task/pass1/task.json \
   --file /data/work/corrected-labels.json
 ```
 
@@ -264,7 +216,7 @@ Use the returned handle, rather than guessing paths. A second submission returns
 If a command response is lost, recover the latest committed handle and view:
 
 ```sh
-uv run annolabel task-status /data/work/photo-task/task.json
+annolabel task-status /data/work/photo-task/task.json
 ```
 
 An identical retry against the same checkpoint replays its saved receipt while its saved revision remains current. A different payload against a consumed checkpoint requires the next handle. If another writer has changed the source or labels, stop and reconcile the change before creating a new task.
@@ -278,7 +230,7 @@ The pass limit applies to this task chain. It is not a limit on agent tool calls
 For a single class addition:
 
 ```sh
-uv run annolabel label /data/images/photo.jpg --label indoor \
+annolabel label /data/images/photo.jpg --label indoor \
   --note "Scene classification"
 ```
 
@@ -293,7 +245,7 @@ The latter removes any existing object annotations. Use the individual `label` c
 ### Bounding boxes only
 
 ```sh
-uv run annolabel task /data/images/photo.jpg \
+annolabel task /data/images/photo.jpg \
   --output /data/work/boxes-task --geometry boxes
 ```
 
@@ -312,9 +264,9 @@ Use the default task mode and submit ordered silhouette vertices. Transparent ob
 Export one stored polygon as a binary PNG mask:
 
 ```sh
-uv run annolabel info /data/images/photo.jpg
+annolabel info /data/images/photo.jpg
 # Copy a polygon's annotation id from the response, not its object_id.
-uv run annolabel mask /data/images/photo.jpg \
+annolabel mask /data/images/photo.jpg \
   --id POLYGON_ANNOTATION_ID --output /data/work/object-mask.png
 ```
 
@@ -335,8 +287,8 @@ For a folder, ask your agent to:
 An agent may group two independent submissions into one shell call:
 
 ```sh
-uv run annolabel submit /data/work/image-a/task.json --file /data/work/image-a-labels.json
-uv run annolabel submit /data/work/image-b/task.json --file /data/work/image-b-labels.json
+annolabel submit /data/work/image-a/task.json --file /data/work/image-a-labels.json
+annolabel submit /data/work/image-b/task.json --file /data/work/image-b-labels.json
 ```
 
 These are separate image operations, not one atomic multi-image transaction. Check each command's result: the final shell exit status alone does not establish that both succeeded. Keep **one writer per source image**; concurrent agents can work on different images. Avoid stitching images unless your calling system also handles the coordinate mapping back to each source. AnnoLabel does not implement LLM batching or image-stitching inference.
@@ -344,7 +296,7 @@ These are separate image operations, not one atomic multi-image transaction. Che
 ## Export COCO for training
 
 ```sh
-uv run annolabel export /data/images --output /data/datasets/labeled
+annolabel export /data/images --output /data/datasets/labeled
 ```
 
 COCO is currently the only built-in training format; `--format coco` is optional. Folder export discovers `*.labels.json` recursively and excludes images without sidecars. A direct image export may contain zero annotations.
@@ -377,9 +329,9 @@ labeled/
 Prepare a complete ordered vocabulary shared by all splits, such as `["car", "person", "bicycle"]`, then reuse it:
 
 ```sh
-uv run annolabel export /data/train --output /data/datasets/train \
+annolabel export /data/train --output /data/datasets/train \
   --categories /data/categories.json
-uv run annolabel export /data/validation --output /data/datasets/validation \
+annolabel export /data/validation --output /data/datasets/validation \
   --categories /data/categories.json
 ```
 
@@ -392,14 +344,14 @@ For another format, use this COCO export as the interchange dataset for your tra
 For larger review budgets, `prepare` / `apply` / `review` expose the full packet, revision snapshot, coordinate grid, and paired original/annotated crops:
 
 ```sh
-uv run annolabel prepare /data/images/photo.jpg \
+annolabel prepare /data/images/photo.jpg \
   --output /data/work/prepared --instructions /data/instructions.txt
 # Open original.png and read guide.txt; edit the returned annotations.json.
 # Keep image_sha256 and base_revision when using apply.
-uv run annolabel apply /data/images/photo.jpg \
+annolabel apply /data/images/photo.jpg \
   --file /data/work/prepared/annotations.json \
   --packet /data/work/prepared/packet.json --output /data/work/review-1
-uv run annolabel review /data/images/photo.jpg \
+annolabel review /data/images/photo.jpg \
   --packet /data/work/review-1/packet.json \
   --output /data/work/extra-review --per-page 2 --padding 0.25
 ```
@@ -411,17 +363,17 @@ Detailed views have padding and original-coordinate rulers. Read the ruler value
 For an arbitrary detail, write a region file such as `[{"key":"detail-1","box":[100,80,300,220]}]`, then:
 
 ```sh
-uv run annolabel review /data/images/photo.jpg \
+annolabel review /data/images/photo.jpg \
   --regions /data/work/regions.json --output /data/work/detail-review
 ```
 
 Small individual additions are also available:
 
 ```sh
-uv run annolabel box /data/images/photo.jpg --label car --xyxy 50 30 250 180
-uv run annolabel polygon /data/images/photo.jpg --label leaf \
+annolabel box /data/images/photo.jpg --label car --xyxy 50 30 250 180
+annolabel polygon /data/images/photo.jpg --label leaf \
   --points '[[25,40],[60,20],[90,45],[60,90]]'
-uv run annolabel render /data/images/photo.jpg --output /data/work/preview.png
+annolabel render /data/images/photo.jpg --output /data/work/preview.png
 ```
 
 These commands add annotations by default. To edit an existing one, use its `--id` with the complete replacement geometry. To attach a second geometry to the same object, use its `--object-id`; to link existing annotations, use `annolabel link IMAGE --ids BOX_ID POLYGON_ID`. Equal class names never imply equal object identity. Use `remove IMAGE --id ANNOTATION_ID` to remove one annotation. Render again and inspect your edit.
@@ -455,7 +407,7 @@ Current scope:
 
 ## Command reference
 
-Run `uv run annolabel COMMAND --help` for full arguments.
+Run `annolabel COMMAND --help` for full arguments.
 
 | Command | Purpose |
 |---|---|
@@ -477,8 +429,13 @@ Run `uv run annolabel COMMAND --help` for full arguments.
 
 ## Development
 
+Clone the repository to work on the source. See [publishing instructions](docs/publishing.md) for releases.
+
 ```sh
+git clone https://github.com/Andesprit/annolabel.git
+cd annolabel
 uv sync --locked
+uv run annolabel --help
 uv run pytest -q
 uv build
 ```
@@ -512,3 +469,9 @@ Dependencies flow from `main` to `core`, then to `modules` and service contracts
 `AnnoLabel(..., image_service=...)` and `export_dataset(..., image_service=...)` accept an alternative reader or a mock implementing `ImageServiceBase`. New external connections belong under `services/<name>/base.py` plus an implementation, wired in core. Add `core/settings.py` and environment validation only when a connection actually needs configuration or credentials.
 
 Keep changes focused, add tests for behavioral changes, and run the suite before submitting a pull request. When changing CLI behavior, update the examples and agent instructions together. The experimental API is versioned as `0.x`; pin a tag or commit for reproducible installations.
+
+### Upgrading from the previous name
+
+AnnoLabel was previously published as `andesprit-labelkit`. Install `annolabel` and replace the old `labelkit` command with `annolabel` in your agent prompts and scripts. Python imports now use `annolabel`, and the core facade is `AnnoLabel` in `annolabel.core.annolabel`.
+
+Existing `.labels.json` annotations, task handles, object IDs, and COCO datasets remain compatible. Keep active task directories in place. After switching your scripts, you can remove the previous installation with `uv tool uninstall andesprit-labelkit`. Existing releases remain available under their original name.
