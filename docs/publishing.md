@@ -2,6 +2,8 @@
 
 Distribution: `andesprit-labelkit`. CLI and module: `labelkit`.
 
+Version **0.4.2** was published on September 9, 2026: [PyPI release](https://pypi.org/project/andesprit-labelkit/0.4.2/), [successful release workflow](https://github.com/Andesprit/labelkit/actions/runs/34376896930). Trusted publishing is configured for the repository and environment below; the one-time setup is already complete.
+
 The name `labelkit` is already registered by an unrelated project. Never upload this distribution under that name.
 
 ## One-time setup
