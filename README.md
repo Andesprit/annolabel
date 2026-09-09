@@ -10,7 +10,9 @@ Give Codex, Claude Code, Gemini, or another vision-capable agent an image and a 
 
 AnnoLabel runs locally. It does not call models or infer boundaries. Your agent needs to be able to open images and run shell commands.
 
-![Two annotated synthetic shapes](docs/images/shapes-annotated.png)
+![Astra's bounding boxes and segmentation outlines on objects suspended in water](docs/images/astra-photo-annotated.png)
+
+Astra labeled the 12 prominent objects in this image using AnnoLabel, with one annotation pass and one visual review. Boundaries remain approximate. [View the original image](docs/images/astra-photo-original.png).
 
 ## Install
 
