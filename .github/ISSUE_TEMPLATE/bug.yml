@@ -1,0 +1,24 @@
+name: Bug report
+description: Report a reproducible problem with the CLI or its output.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: AnnoLabel version, Python version, operating system, and agent/model if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the command and a minimal submission. Use a synthetic image or one you have permission to share; remove private source paths.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include the complete error JSON or a review image when useful.
+    validations:
+      required: true

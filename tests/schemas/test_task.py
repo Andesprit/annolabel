@@ -1,12 +1,16 @@
 """Short submissions keep task metadata out of the agent payload."""
+
 import pytest
 from pydantic import ValidationError
+
 from annolabel.schemas.task import Submission, TaskHandle
 
 
 def test_submission_rejects_injected_checkpoint_metadata() -> None:
     with pytest.raises(ValidationError, match="Extra inputs"):
-        Submission.model_validate({"classifications": [], "objects": [], "base_revision": "override"})
+        Submission.model_validate(
+            {"classifications": [], "objects": [], "base_revision": "override"}
+        )
 
 
 @pytest.mark.parametrize("max_passes", [0, 3])

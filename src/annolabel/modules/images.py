@@ -1,5 +1,7 @@
 """Annotation overlays and masks on in-memory pixels; no inference models."""
+
 from PIL import Image, ImageDraw, ImageFont
+
 from annolabel.schemas.annotations import Document
 
 
@@ -12,10 +14,14 @@ def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image
     if grid:
         for x in range(0, image.width, grid):
             draw.line([(x, 0), (x, image.height)], fill=(255, 255, 255, 130))
-            draw.text((x + 2, 2), str(x), font=font, fill="black", stroke_width=1, stroke_fill="white")
+            draw.text(
+                (x + 2, 2), str(x), font=font, fill="black", stroke_width=1, stroke_fill="white"
+            )
         for y in range(0, image.height, grid):
             draw.line([(0, y), (image.width, y)], fill=(255, 255, 255, 130))
-            draw.text((2, y + 2), str(y), font=font, fill="black", stroke_width=1, stroke_fill="white")
+            draw.text(
+                (2, y + 2), str(y), font=font, fill="black", stroke_width=1, stroke_fill="white"
+            )
     palette = [(14, 165, 233), (234, 88, 12), (139, 92, 246), (22, 163, 74)]
     label_y = 24 if grid else 4
     for index, annotation in enumerate(document.annotations):
@@ -36,7 +42,7 @@ def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image
         x = max(0, min(x, image.width - (bounds[2] - bounds[0]) - 8))
         y = max(0, min(y, image.height - 24))
         box = draw.textbbox((x + 3, y + 2), caption, font=font)
-        draw.rectangle((box[0]-3, box[1]-2, box[2]+3, box[3]+2), fill=(*color, 255))
+        draw.rectangle((box[0] - 3, box[1] - 2, box[2] + 3, box[3] + 2), fill=(*color, 255))
         draw.text((x + 3, y + 2), caption, font=font, fill="white")
     return Image.alpha_composite(canvas, overlay).convert("RGB")
 

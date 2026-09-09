@@ -1,0 +1,34 @@
+Independent image-labeling evaluation using LabelKit's short task interface. You may write only within <REPO>/unpadding-evaluation/luna. Use your own vision and manually chosen geometry. No other models, inference, detectors, SAM, reference labels, other evaluation folders, prior conversations, helper scripts or source-code inspection. The files below are fresh images with no annotations. Always use absolute paths; the shell cwd may differ.
+
+RESEARCHER TASK:
+Classify the scene and annotate every prominent foreground object in each input image with a tight bounding box and a polygon tracing its visible silhouette. For the underwater photo include the prominent large bubble; exclude the numerous tiny background bubbles and water surface. Include the full outer silhouette of transparent objects, including their interior. For the synthetic image annotate all prominent shapes. Use descriptive visual labels and notes for uncertain material/identity. Do not infer invisible boundaries. You supply the vision and geometry; do not use inference models, detectors, SAM, external labeling services, or other agents.
+
+
+WORKFLOW: one initial annotation pass, one visual review, and at most one correction per image. This explicit experiment overrides generic project instructions about opening more views or repeated corrections. The task handle manages hashes, revisions and output paths. Do NOT calculate/copy hashes, read internal packet files, or inspect LabelKit implementation. Everything needed is here.
+
+1. Open each returned initial view below exactly once (two image reads). These are the exact EXIF-oriented source images, with NO padding, rulers, grid or resizing. The top-left image corner is (0,0); X increases right and Y down. PNG pixel coordinates and source coordinates are identical. Use the stated original dimensions even if your viewer scales the display. Initial and review views have identical dimensions and origin.
+2. Choose all scene classifications, labels, boxes and polygon vertices. Submit BOTH complete image batches in ONE shell-tool call containing two sequential commands, using the exact format below with quoted heredocs as stdin. No separate scripts or JSON-writing tools. The response is intentionally tiny: status, task, view, objects, passes_left. The returned task is the checkpoint for the optional correction.
+3. Open ONLY each returned view, once (two image reads). This is the single review. Look specifically for contours cutting through objects, background included in polygons, missed protrusions, coordinate shifts, missing/extra objects, and incorrect labels. Check placement against the actual object boundaries in this same image coordinate frame. Do not open crops or alternative previews.
+4. If defects are found, change only those annotations but retain ALL unchanged objects/classes in the replacement JSON. Submit at most ONE correction per image, using its NEW returned task handle, in ONE shell-tool call. Then STOP; do not reread corrected views or make further corrections. If no defects are found, finish after review. Flag uncertainty instead of claiming pixel-perfect labels.
+
+Allowed recovery: if shell output is missing/truncated, run `rtk proxy env UV_CACHE_DIR=/tmp/labelkit-uv-cache uv run --offline --project <REPO> labelkit task-status INITIAL_TASK_PATH` to retrieve the current task/view. This is the entire recovery operation, not a reason to inspect files or write scripts. If submission JSON is invalid, fix the reported issue and retry the same task handle once. On TASK_CONFLICT or PASS_LIMIT, stop and report the error. Do not debug or introspect. Target 6-7 tool operations including the instruction-file read; at most 2 extra recovery calls. Do not export or write a summary file; the parent will perform deterministic COCO export and validation afterward. Final answer under 90 words: per-image object counts, whether you corrected anything, remaining uncertainty. No parent annotation feedback will be supplied.
+
+COMMAND FORMAT:
+rtk proxy env UV_CACHE_DIR=/tmp/labelkit-uv-cache uv run --offline --project <REPO> labelkit submit TASK_PATH --file - <<'LABELKIT_JSON'
+{"classifications":[{"label":"YOUR_SCENE_LABEL"}],"objects":[{"key":"obj1","label":"YOUR_OBJECT_LABEL","box":[X1,Y1,X2,Y2],"polygon":[[X,Y],[X,Y],[X,Y]],"note":"optional uncertainty"}]}
+LABELKIT_JSON
+
+The JSON above describes the schema, not valid geometry to copy. Supply every object's own coordinates from vision. classifications and objects are required arrays. Object keys must be unique/stable. A polygon has >=3 ordered distinct boundary vertices, no repeated first point or self-intersections. Boxes must enclose polygons. Coordinates stay in the original image bounds. You may omit box to derive its enclosing box from polygon. This is a FULL replacement; omitted objects/classes are removed. Do not include image_sha256, base_revision, output paths or annotation IDs in the JSON.
+
+IMAGE photo.jpg: 1280 x 853 original pixels
+Initial image view to open: <REPO>/unpadding-evaluation/luna/results/photo.jpg/view.png
+INITIAL_TASK_PATH / first TASK_PATH: <REPO>/unpadding-evaluation/luna/results/photo.jpg/task.json
+First review view (also returned by submit): <REPO>/unpadding-evaluation/luna/results/photo.jpg/pass1/view.png
+Correction TASK_PATH (also returned by submit): <REPO>/unpadding-evaluation/luna/results/photo.jpg/pass1/task.json
+
+IMAGE shapes.png: 640 x 400 original pixels
+Initial image view to open: <REPO>/unpadding-evaluation/luna/results/shapes.png/view.png
+INITIAL_TASK_PATH / first TASK_PATH: <REPO>/unpadding-evaluation/luna/results/shapes.png/task.json
+First review view (also returned by submit): <REPO>/unpadding-evaluation/luna/results/shapes.png/pass1/view.png
+Correction TASK_PATH (also returned by submit): <REPO>/unpadding-evaluation/luna/results/shapes.png/pass1/task.json
+

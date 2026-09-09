@@ -1,14 +1,21 @@
 """Resolve source files and invoke the default dataset exporter."""
+
 import json
 from pathlib import Path
+
 from annolabel.core.annolabel import AnnoLabel
 from annolabel.modules.coco import export_coco
 from annolabel.services.images.base import ImageServiceBase
 from annolabel.services.images.local import LocalImageService
 
 
-def export_dataset(source: str, output: str, categories_file: str | None = None, *,
-                   image_service: ImageServiceBase | None = None) -> dict:
+def export_dataset(
+    source: str,
+    output: str,
+    categories_file: str | None = None,
+    *,
+    image_service: ImageServiceBase | None = None,
+) -> dict:
     """Export one image or recursively discovered annotation sidecars.
 
     :param source: Image or directory containing sidecars.
@@ -21,7 +28,7 @@ def export_dataset(source: str, output: str, categories_file: str | None = None,
     path = Path(source).expanduser().resolve(strict=True)
     if path.is_dir():
         suffix = ".labels.json"
-        sources = [p.with_name(p.name[:-len(suffix)]) for p in sorted(path.rglob("*" + suffix))]
+        sources = [p.with_name(p.name[: -len(suffix)]) for p in sorted(path.rglob("*" + suffix))]
         if not sources:
             raise ValueError("no annotation sidecars found in input directory")
     else:

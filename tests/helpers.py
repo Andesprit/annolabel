@@ -1,4 +1,5 @@
 """Shared subprocess and JSON helpers, independent of test modules."""
+
 import json
 import subprocess
 import sys
@@ -13,8 +14,12 @@ def cli(*args: object, success: bool = True, stdin: str | None = None) -> dict:
     :param stdin: Optional JSON supplied through standard input.
     :returns: Decoded success receipt or error.
     """
-    result = subprocess.run([sys.executable, "-m", "annolabel.main", *map(str, args)],
-                            text=True, input=stdin, capture_output=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "annolabel.main", *map(str, args)],
+        text=True,
+        input=stdin,
+        capture_output=True,
+    )
     assert result.returncode == (0 if success else 2), result.stderr
     if success:
         assert not result.stderr
