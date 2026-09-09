@@ -6,7 +6,9 @@ Give an agent an image and a labeling task. The agent inspects the pixels and su
 
 LabelKit does not call an LLM or infer object boundaries. Use it from Codex, Claude Code, Gemini/Antigravity, or any agent that can **open images and run shell commands**. Your chosen agent supplies the vision; LabelKit supplies the annotation tools.
 
-![Example annotations on two geometric shapes](docs/images/shapes-annotated.png)
+![Astra-generated bounding boxes and silhouette polygons on an underwater image](docs/images/astra-photo-annotated.png)
+
+Astra annotated the 12 prominent objects in this image using LabelKit: one annotation pass, one visual review, and no correction. The agent chose the geometry; LabelKit validated and rendered it. Boundaries remain approximate. [View the original image](docs/images/astra-photo-original.png).
 
 ## Contents
 
@@ -33,7 +35,23 @@ Requirements:
 
 Runtime dependencies are Pillow and Pydantic. LabelKit itself requires no API keys, model downloads, GPU, or labeling service. Your agent uses its own authentication and may send images to its model provider.
 
-### Clone and run
+### Install with uv
+
+Install the CLI directly from the tagged GitHub version:
+
+```sh
+uv tool install 'git+https://github.com/Andesprit/labelkit.git@v0.4.1'
+labelkit --version
+labelkit --help
+```
+
+The command is **`uv tool install`**, not `uv install`. It installs an isolated CLI environment and puts `labelkit` on your executable path. A separate clone is unnecessary for this installation.
+
+The repository is private, so Git must be authenticated with an account that has access. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
+
+LabelKit has not been published to PyPI; use the Git URL above rather than assuming `uv tool install labelkit` or `pip install labelkit` refers to this project.
+
+### Clone for the examples or development
 
 ```sh
 git clone https://github.com/Andesprit/labelkit.git
@@ -43,8 +61,6 @@ uv run labelkit --version
 uv run labelkit --help
 ```
 
-Access to a private repository requires GitHub authentication with repository access. Authenticate Git using your usual organization-approved method before cloning.
-
 `uv sync` installs the development group as well, including pytest and pycocotools. To install only runtime dependencies, use `uv sync --locked --no-dev`, then `uv run --no-dev labelkit --help`.
 
 From another directory, point uv at the checkout:
@@ -53,26 +69,18 @@ From another directory, point uv at the checkout:
 uv run --project /absolute/path/to/labelkit labelkit info /absolute/path/to/photo.jpg
 ```
 
-### Install the CLI on your PATH
-
-From a clone:
+You can also install the CLI from a local clone:
 
 ```sh
 uv tool install .
 labelkit --help
 ```
 
-Or install the tagged version directly from Git:
-
-```sh
-uv tool install 'git+https://github.com/Andesprit/labelkit.git@v0.4.1'
-```
-
-If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details. LabelKit has not been published to PyPI; install this repository rather than assuming `pip install labelkit` refers to this project.
-
 The rest of this README uses `uv run labelkit` from the checkout. Replace that prefix with `labelkit` after a tool installation, or with `uv run --project /absolute/path/to/labelkit labelkit` from another working directory. Shell examples use POSIX syntax; on PowerShell, use file-based JSON submissions rather than heredocs.
 
 ## Run the included example
+
+![Example annotations on two geometric shapes](docs/images/shapes-annotated.png)
 
 Run these commands from a fresh clone. The example uses a bundled image and hand-authored annotations so you can verify the tooling without an LLM.
 
