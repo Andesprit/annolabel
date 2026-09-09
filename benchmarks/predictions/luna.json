@@ -1,0 +1,100 @@
+{
+  "version": 2,
+  "coordinates": "exif-oriented-pixels",
+  "image": {
+    "file": "shapes.png",
+    "width": 640,
+    "height": 400,
+    "sha256": "e54d031cc832bab59ff314c769f35a3caaf16cc92944ca3e28d47b1d7a908f90"
+  },
+  "annotations": [
+    {
+      "id": "78df7871197e537981764f1cde185195",
+      "object_id": null,
+      "kind": "label",
+      "label": "simple geometric shapes",
+      "points": [],
+      "note": null
+    },
+    {
+      "id": "cb050ef2505152a480f48948e79ab5f2",
+      "object_id": "orange_square",
+      "kind": "box",
+      "label": "orange square",
+      "points": [
+        [
+          59.0,
+          89.0
+        ],
+        [
+          241.0,
+          292.0
+        ]
+      ],
+      "note": null
+    },
+    {
+      "id": "ba5c8d94980d5eaea1e6b3ebad652dcd",
+      "object_id": "orange_square",
+      "kind": "polygon",
+      "label": "orange square",
+      "points": [
+        [
+          59.0,
+          89.0
+        ],
+        [
+          241.0,
+          89.0
+        ],
+        [
+          241.0,
+          292.0
+        ],
+        [
+          59.0,
+          292.0
+        ]
+      ],
+      "note": null
+    },
+    {
+      "id": "addafe45be1a5e299391f44aff9aacd2",
+      "object_id": "blue_triangle",
+      "kind": "box",
+      "label": "blue triangle",
+      "points": [
+        [
+          339.0,
+          69.0
+        ],
+        [
+          552.0,
+          292.0
+        ]
+      ],
+      "note": null
+    },
+    {
+      "id": "1104d98038c25bbea78800493dd93549",
+      "object_id": "blue_triangle",
+      "kind": "polygon",
+      "label": "blue triangle",
+      "points": [
+        [
+          440.0,
+          69.0
+        ],
+        [
+          552.0,
+          292.0
+        ],
+        [
+          339.0,
+          292.0
+        ]
+      ],
+      "note": null
+    }
+  ]
+}

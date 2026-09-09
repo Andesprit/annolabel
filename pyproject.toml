@@ -1,9 +1,26 @@
 [project]
 name = "annolabel"
-version = "0.5.0"
+version = "0.5.1"
 description = "Local image annotation primitives for vision-capable agents"
 readme = "docs/PYPI.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Andesprit contributors"}]
+maintainers = [{name = "Andesprit"}]
+keywords = ["annotation", "computer-vision", "coco", "agents", "labeling"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
 dependencies = [
     "pillow>=12.3.0",
     "pydantic>=2.13.5",
@@ -12,6 +29,8 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/Andesprit/annolabel"
 Issues = "https://github.com/Andesprit/annolabel/issues"
+Documentation = "https://github.com/Andesprit/annolabel/blob/main/docs/usage.md"
+Changelog = "https://github.com/Andesprit/annolabel/blob/main/CHANGELOG.md"
 
 [project.scripts]
 annolabel = "annolabel.main:main"
@@ -24,6 +43,8 @@ build-backend = "uv_build"
 dev = [
     "pycocotools>=2.0.11",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.6",
 ]
 
 [tool.uv.build-backend]
@@ -31,3 +52,21 @@ module-name = "annolabel"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+include = ["src/**/*.py", "tests/**/*.py", "benchmarks/**/*.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.coverage.run]
+source = ["annolabel"]
+branch = true
+patch = ["subprocess"]
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90

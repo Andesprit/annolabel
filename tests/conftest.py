@@ -1,7 +1,10 @@
 """Shared local-image fixtures; the package needs no credentials or env vars."""
+
 from pathlib import Path
+
 import pytest
 from PIL import Image
+
 from annolabel.schemas.annotations import Document
 from annolabel.services.images.local import LocalImageService
 

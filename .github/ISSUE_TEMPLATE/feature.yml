@@ -1,0 +1,16 @@
+name: Feature request
+description: Propose a change grounded in a labeling workflow.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What labeling task is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+      description: Include an example command or expected output if useful.
+    validations:
+      required: true

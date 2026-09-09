@@ -1,10 +1,12 @@
 """End-to-end checks against real images and the public CLI."""
+
 import hashlib
-import json
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 from PIL import Image
+
 from annolabel.core.annolabel import AnnoLabel
 from tests.helpers import cli
 
@@ -18,8 +20,19 @@ def test_full_annotation_and_correction_workflow(source: Path, tmp_path: Path) -
     box = cli("box", source, "--label", "square", "--xyxy", 10, 10, 40, 40)
     polygon = cli("polygon", source, "--label", "triangle", "--points", "[[50,10],[90,10],[70,60]]")
     assert len(cli("info", source)["annotations"]) == 3
-    corrected = cli("box", source, "--label", "rectangle", "--xyxy", 10, 10, 45, 40,
-                    "--id", box["annotation"]["id"])
+    corrected = cli(
+        "box",
+        source,
+        "--label",
+        "rectangle",
+        "--xyxy",
+        10,
+        10,
+        45,
+        40,
+        "--id",
+        box["annotation"]["id"],
+    )
     assert corrected["annotation"]["points"] == [[10, 10], [45, 40]]
     assert len(cli("info", source)["annotations"]) == 3
     preview = tmp_path / "preview.png"
@@ -39,19 +52,22 @@ def test_full_annotation_and_correction_workflow(source: Path, tmp_path: Path) -
     assert hashlib.sha256(source.read_bytes()).hexdigest() == original_hash
 
 
-@pytest.mark.parametrize("arguments", [
-    ["box", "--label", "bad", "--xyxy", 10, 10, 101, 60],
-    ["box", "--label", "bad", "--xyxy", 10, 10, 5, 60],
-    ["box", "--label", "bad", "--xyxy", 0, 0, "nan", 60],
-    ["polygon", "--label", "bad", "--points", "[[0,0],[10,10]]"],
-    ["polygon", "--label", "bad", "--points", "[[0,0],[10,10],[20,20]]"],
-    ["polygon", "--label", "bad", "--points", "[[0,0],[90,70],[0,70],[70,0]]"],
-    ["polygon", "--label", "bad", "--points", "[[0,0],[90,0],[0,70],[0,0]]"],
-    ["polygon", "--label", "bad", "--points", "not json"],
-    ["label", "--label", "   "],
-    ["label", "--label", "new", "--id", "missing"],
-    ["remove", "--id", "missing"],
-])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["box", "--label", "bad", "--xyxy", 10, 10, 101, 60],
+        ["box", "--label", "bad", "--xyxy", 10, 10, 5, 60],
+        ["box", "--label", "bad", "--xyxy", 0, 0, "nan", 60],
+        ["polygon", "--label", "bad", "--points", "[[0,0],[10,10]]"],
+        ["polygon", "--label", "bad", "--points", "[[0,0],[10,10],[20,20]]"],
+        ["polygon", "--label", "bad", "--points", "[[0,0],[90,70],[0,70],[70,0]]"],
+        ["polygon", "--label", "bad", "--points", "[[0,0],[90,0],[0,70],[0,0]]"],
+        ["polygon", "--label", "bad", "--points", "not json"],
+        ["label", "--label", "   "],
+        ["label", "--label", "new", "--id", "missing"],
+        ["remove", "--id", "missing"],
+    ],
+)
 def test_invalid_edits_leave_sidecar_unchanged(source: Path, arguments: list) -> None:
     info = cli("label", source, "--label", "keep")
     sidecar = Path(info["sidecar"])
@@ -91,7 +107,15 @@ def test_output_protection_and_mask_errors(source: Path, tmp_path: Path) -> None
     cli("render", source, "--output", tmp_path / "bad.jpg", success=False)
     cli("render", source, "--output", preview, "--grid", -1, success=False)
     label = cli("label", source, "--label", "image")
-    cli("mask", source, "--id", label["annotation"]["id"], "-o", tmp_path / "mask.png", success=False)
+    cli(
+        "mask",
+        source,
+        "--id",
+        label["annotation"]["id"],
+        "-o",
+        tmp_path / "mask.png",
+        success=False,
+    )
     cli("mask", source, "--id", "missing", "-o", tmp_path / "mask.png", success=False)
 
 

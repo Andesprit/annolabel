@@ -1,8 +1,10 @@
 """Local annotation operations exposed to the CLI."""
+
 import os
 import tempfile
 from pathlib import Path
 from uuid import uuid4
+
 from annolabel.modules.images import polygon_mask, render
 from annolabel.schemas.annotations import Annotation, Document, Point
 from annolabel.services.images.base import ImageServiceBase
@@ -15,6 +17,7 @@ class AnnoLabel:
     :param image_path: Source image filename.
     :param image_service: Image reader; defaults to the local Pillow service.
     """
+
     def __init__(self, image_path: str, *, image_service: ImageServiceBase | None = None) -> None:
         self.image_service = image_service if image_service is not None else LocalImageService()
         self.path = Path(image_path).expanduser().resolve(strict=True)
@@ -23,14 +26,19 @@ class AnnoLabel:
         if self.sidecar.exists():
             self.document = Document.model_validate_json(self.sidecar.read_text())
             if self.document.image != info:
-                raise ValueError("source image differs from its annotation sidecar; restore the original image or move the old sidecar before starting again")
+                raise ValueError(
+                    "source image differs from its annotation sidecar; restore the original image or move the old sidecar before starting again"
+                )
         else:
             self.document = Document(image=info)
 
     def info(self) -> dict:
         """Return source dimensions, annotation data, and sidecar location."""
-        return {"image_path": str(self.path), "sidecar": str(self.sidecar),
-                **self.document.model_dump(mode="json")}
+        return {
+            "image_path": str(self.path),
+            "sidecar": str(self.sidecar),
+            **self.document.model_dump(mode="json"),
+        }
 
     def _save(self, annotations: list[Annotation]) -> None:
         document = Document(image=self.document.image, annotations=annotations)
@@ -44,9 +52,15 @@ class AnnoLabel:
             Path(temporary).unlink(missing_ok=True)
         self.document = document
 
-    def annotate(self, kind: str, label: str, points: list[Point],
-                 annotation_id: str | None = None, note: str | None = None,
-                 object_id: str | None = None) -> dict:
+    def annotate(
+        self,
+        kind: str,
+        label: str,
+        points: list[Point],
+        annotation_id: str | None = None,
+        note: str | None = None,
+        object_id: str | None = None,
+    ) -> dict:
         """Add an annotation, or replace an existing ID when supplied."""
         existing = self.document.annotations
         if annotation_id is not None and not any(a.id == annotation_id for a in existing):
@@ -56,13 +70,23 @@ class AnnoLabel:
             raise ValueError(f"object ID not found: {object_id}")
         if previous and object_id is None and kind != "label":
             object_id = previous.object_id
-        annotation = Annotation(id=annotation_id or uuid4().hex[:8], kind=kind,
-                                label=label, points=points, note=note, object_id=object_id)
+        annotation = Annotation(
+            id=annotation_id or uuid4().hex[:8],
+            kind=kind,
+            label=label,
+            points=points,
+            note=note,
+            object_id=object_id,
+        )
         if annotation_id:
-            updated = [annotation if a.id == annotation_id else
-                       a.model_copy(update={"label": label}) if
-                       annotation.object_id is not None and a.object_id == annotation.object_id else a
-                       for a in existing]
+            updated = [
+                annotation
+                if a.id == annotation_id
+                else a.model_copy(update={"label": label})
+                if annotation.object_id is not None and a.object_id == annotation.object_id
+                else a
+                for a in existing
+            ]
         else:
             updated = [*existing, annotation]
         self._save(updated)
@@ -80,11 +104,16 @@ class AnnoLabel:
             raise ValueError("whole-image labels cannot be linked to objects")
         groups = {a.object_id for a in selected}
         object_id = selected[0].object_id
-        updated = [a.model_copy(update={"object_id": object_id}) if a.object_id in groups else a
-                   for a in self.document.annotations]
+        updated = [
+            a.model_copy(update={"object_id": object_id}) if a.object_id in groups else a
+            for a in self.document.annotations
+        ]
         self._save(updated)
-        return {"sidecar": str(self.sidecar), "object_id": object_id,
-                "annotation_ids": [a.id for a in updated if a.object_id == object_id]}
+        return {
+            "sidecar": str(self.sidecar),
+            "object_id": object_id,
+            "annotation_ids": [a.id for a in updated if a.object_id == object_id],
+        }
 
     def remove(self, annotation_id: str) -> dict:
         """Remove exactly one existing annotation by ID."""
@@ -94,8 +123,9 @@ class AnnoLabel:
         self._save(updated)
         return {"sidecar": str(self.sidecar), "removed": annotation_id}
 
-    def export_image(self, output: str, *, grid: int = 0,
-                     annotation_id: str | None = None, force: bool = False) -> dict:
+    def export_image(
+        self, output: str, *, grid: int = 0, annotation_id: str | None = None, force: bool = False
+    ) -> dict:
         """Write a preview or polygon mask as PNG, protecting source files."""
         destination = Path(output).expanduser().absolute()
         for protected in [self.path, self.sidecar]:
@@ -105,10 +135,17 @@ class AnnoLabel:
                 raise ValueError("output must not overwrite the source image or annotation sidecar")
         if destination.suffix.lower() != ".png":
             raise ValueError("output must end with .png")
-        result = (polygon_mask(self.document, annotation_id) if annotation_id
-                  else render(self.image, self.document, grid))
+        result = (
+            polygon_mask(self.document, annotation_id)
+            if annotation_id
+            else render(self.image, self.document, grid)
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open("wb" if force else "xb") as handle:
             result.save(handle, format="PNG")
-        return {"output": str(destination), "width": result.width, "height": result.height,
-                "kind": "mask" if annotation_id else "preview"}
+        return {
+            "output": str(destination),
+            "width": result.width,
+            "height": result.height,
+            "kind": "mask" if annotation_id else "preview",
+        }

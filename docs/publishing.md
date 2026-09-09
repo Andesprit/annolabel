@@ -49,3 +49,16 @@ annolabel --version
 ```
 
 The PyPI description lives in `docs/PYPI.md`, with self-contained usage instructions. The source repository and published PyPI distributions are public.
+
+## Release checklist
+
+1. Update the version in `pyproject.toml` and `src/annolabel/main.py`; run `uv lock`.
+2. Add a dated changelog heading, exactly `## VERSION — YYYY-MM-DD`, and describe user-visible changes.
+3. Open a PR. Wait for the required `CI` check (lint, format, build, and the compatibility matrix), then merge.
+4. Dispatch **Publish to PyPI** on `main` with `publish=true`. The workflow rebuilds, validates, and uploads using trusted publishing.
+5. After a successful upload, the workflow creates the version tag and a GitHub release at the exact published commit, using that version's changelog section.
+6. Verify a fresh `uv tool install annolabel==VERSION` outside the checkout. Never overwrite or move an existing published version/tag.
+
+The first 0.5.0 release predates automatic GitHub release creation. Its existing tag remains unchanged. If upload succeeded and release creation failed, rerun only the failed release job; do not upload the version again. Test-only dispatches (`publish=false`) create neither a publication nor a GitHub release.
+
+`main` requires a pull request and the aggregate `CI` check. The project currently permits solo-maintainer PRs without requiring an additional approval; contributors cannot bypass failed checks. Force pushes and branch deletion are blocked. Weekly dependency update PRs use the same checks and are reviewed before merging.

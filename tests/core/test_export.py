@@ -1,11 +1,14 @@
 """Object identity, compatibility, and portable COCO dataset integration checks."""
+
 import csv
 import json
 from pathlib import Path
 from unittest.mock import create_autospec
+
 import pytest
 from PIL import Image
 from pycocotools.coco import COCO
+
 from annolabel.core.export import export_dataset
 from annolabel.services.images.base import ImageServiceBase
 from annolabel.services.images.local import LocalImageService
@@ -25,8 +28,16 @@ def read_coco(root: Path) -> dict:
 def test_linked_object_exports_once_and_classification_is_separate(tmp_path: Path) -> None:
     source = source_at(tmp_path / "photo.png")
     box = cli("box", source, "--label", "triangle", "--xyxy", 10, 10, 50, 50)["annotation"]
-    polygon = cli("polygon", source, "--label", "triangle", "--points", "[[10,10],[50,10],[30,50]]",
-                  "--object-id", box["object_id"])["annotation"]
+    polygon = cli(
+        "polygon",
+        source,
+        "--label",
+        "triangle",
+        "--points",
+        "[[10,10],[50,10],[30,50]]",
+        "--object-id",
+        box["object_id"],
+    )["annotation"]
     assert polygon["object_id"] == box["object_id"]
     cli("label", source, "--label", "indoor", "--note", "scene classification")
     output = tmp_path / "dataset"
@@ -34,9 +45,17 @@ def test_linked_object_exports_once_and_classification_is_separate(tmp_path: Pat
     assert result["format"] == "coco" and result["objects"] == 1 and result["classifications"] == 1
     coco = read_coco(output)
     assert coco["categories"] == [{"id": 1, "name": "triangle", "supercategory": ""}]
-    assert coco["annotations"] == [{"id": 1, "image_id": 1, "category_id": 1,
-                                    "bbox": [10, 10, 40, 40], "area": 800, "iscrowd": 0,
-                                    "segmentation": [[10,10,50,10,30,50]]}]
+    assert coco["annotations"] == [
+        {
+            "id": 1,
+            "image_id": 1,
+            "category_id": 1,
+            "bbox": [10, 10, 40, 40],
+            "area": 800,
+            "iscrowd": 0,
+            "segmentation": [[10, 10, 50, 10, 30, 50]],
+        }
+    ]
     with (output / "classifications.csv").open() as f:
         rows = list(csv.DictReader(f))
     assert rows[0]["label"] == "indoor"
@@ -56,10 +75,14 @@ def test_linked_object_exports_once_and_classification_is_separate(tmp_path: Pat
 def test_link_existing_shapes_and_preserve_identity_on_edits(tmp_path: Path) -> None:
     source = source_at(tmp_path / "photo.png")
     box = cli("box", source, "--label", "leaf", "--xyxy", 0, 0, 60, 60)["annotation"]
-    polygon = cli("polygon", source, "--label", "leaf", "--points", "[[10,10],[50,10],[30,50]]")["annotation"]
+    polygon = cli("polygon", source, "--label", "leaf", "--points", "[[10,10],[50,10],[30,50]]")[
+        "annotation"
+    ]
     assert polygon["object_id"] != box["object_id"]
     cli("link", source, "--ids", box["id"], polygon["id"])
-    changed = cli("box", source, "--id", box["id"], "--label", "petal", "--xyxy", 5, 5, 55, 55)["annotation"]
+    changed = cli("box", source, "--id", box["id"], "--label", "petal", "--xyxy", 5, 5, 55, 55)[
+        "annotation"
+    ]
     assert changed["object_id"] == box["object_id"]
     annotations = cli("info", source)["annotations"]
     assert {a["label"] for a in annotations} == {"petal"}
@@ -102,8 +125,17 @@ def test_invalid_links_do_not_modify_sidecar(tmp_path: Path) -> None:
     for other in [b["id"], c["id"], d["id"], label["id"], "unknown", a["id"]]:
         cli("link", source, "--ids", a["id"], other, success=False)
         assert sidecar.read_bytes() == original
-    cli("polygon", source, "--label", "a", "--points", "[[0,0],[20,0],[10,20]]",
-        "--object-id", "missing", success=False)
+    cli(
+        "polygon",
+        source,
+        "--label",
+        "a",
+        "--points",
+        "[[0,0],[20,0],[10,20]]",
+        "--object-id",
+        "missing",
+        success=False,
+    )
     assert sidecar.read_bytes() == original
 
 
@@ -154,9 +186,14 @@ def test_empty_images_and_stale_sources(tmp_path: Path) -> None:
     assert not (tmp_path / "stale").exists()
 
 
-def test_injected_reader_failure_during_export_leaves_no_dataset(source: Path, tmp_path: Path) -> None:
+def test_injected_reader_failure_during_export_leaves_no_dataset(
+    source: Path, tmp_path: Path
+) -> None:
     service = create_autospec(ImageServiceBase, instance=True)
-    service.load.side_effect = [LocalImageService().load(source), OSError("source became unavailable")]
+    service.load.side_effect = [
+        LocalImageService().load(source),
+        OSError("source became unavailable"),
+    ]
     output = tmp_path / "dataset"
     with pytest.raises(OSError, match="source became unavailable"):
         export_dataset(str(source), str(output), image_service=service)
