@@ -1,0 +1,1 @@
+Classify the scene and annotate each visible geometric shape with a tight box and a polygon tracing its silhouette. Use red rectangle and blue triangle as the object labels. Use original image pixels.
