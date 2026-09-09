@@ -1,0 +1,56 @@
+{
+  "source": "../examples/shapes.png",
+  "image_sha256": "e54d031cc832bab59ff314c769f35a3caaf16cc92944ca3e28d47b1d7a908f90",
+  "reference_kind": "synthetic design geometry; not independently human-reviewed",
+  "historical_tool_version": "LabelKit 0.4.1 (before the AnnoLabel rename)",
+  "scoring_version": "AnnoLabel 0.5.1; Pillow polygon rasterization",
+  "date": "2026-09-09",
+  "runs": {
+    "astra": {
+      "model_resolved": "gpt-6-astra",
+      "reasoning_effort": "medium",
+      "harness": "Codex subagent",
+      "elapsed_seconds_two_images": 101.448,
+      "tool_calls_two_images": 6,
+      "tool_operations_two_images": 6,
+      "shapes_passes_used": 1,
+      "cost_usd": null,
+      "predictions_sha256": "165e00cffc02cdd04c554e9ed4b7f55ed7d310e8b59aadf9b9741fbcc2ada06d"
+    },
+    "luna": {
+      "model_resolved": "gpt-5.6-luna",
+      "reasoning_effort": "medium",
+      "harness": "Codex subagent",
+      "elapsed_seconds_two_images": 93.158,
+      "tool_calls_two_images": 5,
+      "tool_operations_two_images": 7,
+      "shapes_passes_used": 1,
+      "cost_usd": null,
+      "predictions_sha256": "d7447b7bea7caaf086e1785c9e035067255f4fb6d01343a1bd42f11e1947ba8e"
+    },
+    "claude": {
+      "model_resolved": [
+        "claude-fable-5-1"
+      ],
+      "reasoning_effort": null,
+      "harness": "Claude Code through Atelier",
+      "elapsed_seconds_two_images": 223.169909,
+      "tool_calls_two_images": 7,
+      "tool_operations_two_images": 7,
+      "shapes_passes_used": 1,
+      "cost_usd": null,
+      "predictions_sha256": "7a6ab3ec6755dd67e227a62f2b9569da4a89df1744119adb7ea2754389c0e98d"
+    },
+    "gemini": {
+      "model_requested": "gemini-3.8-flash-high",
+      "model_resolved": null,
+      "harness": "Antigravity CLI through Atelier",
+      "elapsed_seconds_two_images": 174.13504,
+      "tool_calls_two_images": 7,
+      "tool_operations_two_images": 7,
+      "shapes_passes_used": 2,
+      "cost_usd": null,
+      "predictions_sha256": "8279c609cdf2376c89b1ec2ef2ae18684b1c8a6207de4a4c4d12f5beacae0a80"
+    }
+  }
+}

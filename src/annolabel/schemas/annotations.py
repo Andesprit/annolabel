@@ -1,5 +1,7 @@
 """Validated, versioned annotation sidecars."""
+
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 Point = tuple[FiniteFloat, FiniteFloat]
@@ -11,18 +13,23 @@ def _cross(a: Point, b: Point, c: Point) -> float:
 
 def _intersects(a: Point, b: Point, c: Point, d: Point) -> bool:
     def on_segment(p: Point, q: Point, r: Point) -> bool:
-        return (min(p[0], q[0]) <= r[0] <= max(p[0], q[0])
-                and min(p[1], q[1]) <= r[1] <= max(p[1], q[1]))
+        return min(p[0], q[0]) <= r[0] <= max(p[0], q[0]) and min(p[1], q[1]) <= r[1] <= max(
+            p[1], q[1]
+        )
+
     ab_c, ab_d, cd_a, cd_b = _cross(a, b, c), _cross(a, b, d), _cross(c, d, a), _cross(c, d, b)
-    return ((ab_c * ab_d < 0 and cd_a * cd_b < 0)
-            or (ab_c == 0 and on_segment(a, b, c))
-            or (ab_d == 0 and on_segment(a, b, d))
-            or (cd_a == 0 and on_segment(c, d, a))
-            or (cd_b == 0 and on_segment(c, d, b)))
+    return (
+        (ab_c * ab_d < 0 and cd_a * cd_b < 0)
+        or (ab_c == 0 and on_segment(a, b, c))
+        or (ab_d == 0 and on_segment(a, b, d))
+        or (cd_a == 0 and on_segment(c, d, a))
+        or (cd_b == 0 and on_segment(c, d, b))
+    )
 
 
 class Annotation(BaseModel):
     """One image label, bounding box, or simple polygon."""
+
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1)
     object_id: str | None = Field(default=None, min_length=1)
@@ -48,8 +55,10 @@ class Annotation(BaseModel):
                 raise ValueError("box requires x1 < x2 and y1 < y2")
         if self.kind == "polygon":
             if len(p) < 3 or len(set(p)) != len(p):
-                raise ValueError("polygon needs at least three distinct points; do not repeat the first point")
-            area = sum(a[0]*b[1] - b[0]*a[1] for a, b in zip(p, p[1:] + p[:1]))
+                raise ValueError(
+                    "polygon needs at least three distinct points; do not repeat the first point"
+                )
+            area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(p, p[1:] + p[:1]))
             if area == 0:
                 raise ValueError("polygon must have nonzero area")
             edges = list(zip(p, p[1:] + p[:1]))
@@ -64,6 +73,7 @@ class Annotation(BaseModel):
 
 class ImageInfo(BaseModel):
     """Identity and dimensions of the EXIF-oriented source image."""
+
     model_config = ConfigDict(extra="forbid")
     file: str
     width: int = Field(gt=0)
@@ -73,6 +83,7 @@ class ImageInfo(BaseModel):
 
 class Document(BaseModel):
     """On-disk JSON annotation document."""
+
     model_config = ConfigDict(extra="forbid")
     version: Literal[2] = 2
     coordinates: Literal["exif-oriented-pixels"] = "exif-oriented-pixels"
@@ -96,7 +107,9 @@ class Document(BaseModel):
         for annotation in self.annotations:
             for x, y in annotation.points:
                 if not (0 <= x <= self.image.width and 0 <= y <= self.image.height):
-                    raise ValueError(f"point ({x}, {y}) lies outside {self.image.width}x{self.image.height} image")
+                    raise ValueError(
+                        f"point ({x}, {y}) lies outside {self.image.width}x{self.image.height} image"
+                    )
         objects: dict[str, list[Annotation]] = {}
         for annotation in self.annotations:
             if annotation.object_id is not None:

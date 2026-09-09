@@ -32,6 +32,8 @@ jobs:
         run: uv sync --locked
       - name: Test
         run: uv run --locked pytest -q
+      - name: Lint and formatting
+        run: uv run --locked ruff check . && uv run --locked ruff format --check .
       - name: Build distributions
         run: uv build --no-sources
       - name: Check package metadata and description
@@ -65,3 +67,26 @@ jobs:
           path: dist/
       - name: Publish using PyPI trusted publishing
         run: uv publish --trusted-publishing always
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Create release at the published commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          python3 - "$VERSION" <<'PY'
+          import pathlib, sys
+          text = pathlib.Path("CHANGELOG.md").read_text()
+          section = text.split("## " + sys.argv[1] + " ", 1)[1]
+          pathlib.Path("release-notes.md").write_text(section.split("\n", 1)[1].split("\n## ", 1)[0].strip() + "\n")
+          PY
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "AnnoLabel $VERSION" --notes-file release-notes.md --latest

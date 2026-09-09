@@ -1,5 +1,7 @@
 # AnnoLabel by Andesprit
 
+MIT-licensed software maintained by [Andesprit](https://github.com/Andesprit). See the [license](https://github.com/Andesprit/annolabel/blob/main/LICENSE), [asset provenance](https://github.com/Andesprit/annolabel/blob/main/ASSETS.md), and [compatibility policy](https://github.com/Andesprit/annolabel/blob/main/docs/compatibility.md).
+
 A local image-labeling CLI for vision-capable agents. The agent inspects your image and chooses scene labels, bounding boxes, and segmentation polygons. AnnoLabel validates and saves annotations, renders review images, and exports **COCO datasets**.
 
 The PyPI distribution, executable, and Python module are all `annolabel`.

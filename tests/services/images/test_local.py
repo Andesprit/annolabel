@@ -1,8 +1,11 @@
 """Exercise the image service against actual files and EXIF metadata."""
+
 import hashlib
 from pathlib import Path
+
 import pytest
 from PIL import Image, ImageOps
+
 from annolabel.services.images.local import LocalImageService
 
 
@@ -10,7 +13,8 @@ def test_orients_pixels_without_modifying_source(tmp_path: Path) -> None:
     path = tmp_path / "rotated.jpg"
     image = Image.new("RGB", (80, 40), "red")
     image.paste("blue", (0, 0, 40, 20))
-    exif = Image.Exif(); exif[274] = 6
+    exif = Image.Exif()
+    exif[274] = 6
     image.save(path, exif=exif)
     original = path.read_bytes()
     actual, info = LocalImageService().load(path)
@@ -24,6 +28,7 @@ def test_orients_pixels_without_modifying_source(tmp_path: Path) -> None:
 def test_rejects_multiframe_images(tmp_path: Path) -> None:
     path = tmp_path / "animated.gif"
     Image.new("RGB", (10, 10), "red").save(
-        path, save_all=True, append_images=[Image.new("RGB", (10, 10), "blue")])
+        path, save_all=True, append_images=[Image.new("RGB", (10, 10), "blue")]
+    )
     with pytest.raises(ValueError, match="multi-frame"):
         LocalImageService().load(path)

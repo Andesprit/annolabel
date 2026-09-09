@@ -1,6 +1,9 @@
 """Agent-facing annotation batches and coordinate view contracts."""
+
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
+
 from annolabel.schemas.annotations import Point
 
 
@@ -10,6 +13,7 @@ class StrictModel(BaseModel):
 
 class ObjectInput(StrictModel):
     """Complete geometry for one object; key is stable across corrections."""
+
     key: str = Field(min_length=1, max_length=100)
     label: str = Field(min_length=1)
     box: tuple[FiniteFloat, FiniteFloat, FiniteFloat, FiniteFloat] | None = None
@@ -33,6 +37,7 @@ class ClassificationInput(StrictModel):
 
 class Batch(StrictModel):
     """A full replacement snapshot; omitted objects are deliberately removed."""
+
     image_sha256: str
     base_revision: str
     classifications: list[ClassificationInput]
@@ -51,7 +56,10 @@ class Batch(StrictModel):
 
 class Rules(StrictModel):
     """Researcher instructions plus machine-checkable object requirements."""
-    instructions: str = "Label every prominent object; describe visible appearance and note uncertainty."
+
+    instructions: str = (
+        "Label every prominent object; describe visible appearance and note uncertainty."
+    )
     categories: list[str] | None = None
     geometry: Literal["boxes", "polygons", "both"] = "both"
     boundary_policy: Literal["visible"] = "visible"
@@ -59,7 +67,8 @@ class Rules(StrictModel):
     @model_validator(mode="after")
     def category_names(self) -> "Rules":
         if self.categories is not None and (
-            any(not c.strip() for c in self.categories) or len(set(self.categories)) != len(self.categories)
+            any(not c.strip() for c in self.categories)
+            or len(set(self.categories)) != len(self.categories)
         ):
             raise ValueError("categories must be unique nonempty object labels")
         return self
@@ -67,6 +76,7 @@ class Rules(StrictModel):
 
 class View(StrictModel):
     """Pixel transform for an explicitly identified panel in a PNG."""
+
     id: str
     path: str
     source_rect: tuple[FiniteFloat, FiniteFloat, FiniteFloat, FiniteFloat]
@@ -75,6 +85,7 @@ class View(StrictModel):
 
 class Packet(StrictModel):
     """Source-bound viewing context; no inferred labels or geometry."""
+
     version: Literal[1] = 1
     image_sha256: str
     width: int = Field(gt=0)
@@ -85,5 +96,6 @@ class Packet(StrictModel):
 
 class Region(StrictModel):
     """An agent-selected region to enlarge before any annotations exist."""
+
     key: str = Field(min_length=1, max_length=100)
     box: tuple[FiniteFloat, FiniteFloat, FiniteFloat, FiniteFloat]

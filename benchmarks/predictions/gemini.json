@@ -1,0 +1,100 @@
+{
+  "version": 2,
+  "coordinates": "exif-oriented-pixels",
+  "image": {
+    "file": "shapes.png",
+    "width": 640,
+    "height": 400,
+    "sha256": "e54d031cc832bab59ff314c769f35a3caaf16cc92944ca3e28d47b1d7a908f90"
+  },
+  "annotations": [
+    {
+      "id": "c3ae016fdb2159b295b8bb78c9401eb7",
+      "object_id": null,
+      "kind": "label",
+      "label": "synthetic 2D shapes",
+      "points": [],
+      "note": null
+    },
+    {
+      "id": "e361987c4c1d5fe6927e6144e4d283d8",
+      "object_id": "shapes_obj1_orange_square",
+      "kind": "box",
+      "label": "orange square",
+      "points": [
+        [
+          60.0,
+          90.0
+        ],
+        [
+          240.0,
+          290.0
+        ]
+      ],
+      "note": "orange square"
+    },
+    {
+      "id": "0f93ab8ae81b50458592935373a30bf7",
+      "object_id": "shapes_obj1_orange_square",
+      "kind": "polygon",
+      "label": "orange square",
+      "points": [
+        [
+          60.0,
+          90.0
+        ],
+        [
+          240.0,
+          90.0
+        ],
+        [
+          240.0,
+          290.0
+        ],
+        [
+          60.0,
+          290.0
+        ]
+      ],
+      "note": "orange square"
+    },
+    {
+      "id": "961609f18e7050b99bb229f86b81a9ce",
+      "object_id": "shapes_obj2_blue_triangle",
+      "kind": "box",
+      "label": "blue triangle",
+      "points": [
+        [
+          340.0,
+          70.0
+        ],
+        [
+          550.0,
+          290.0
+        ]
+      ],
+      "note": "blue triangle"
+    },
+    {
+      "id": "e6ebb4ef3e26550ab1ebf8b3e4ed4573",
+      "object_id": "shapes_obj2_blue_triangle",
+      "kind": "polygon",
+      "label": "blue triangle",
+      "points": [
+        [
+          442.0,
+          70.0
+        ],
+        [
+          550.0,
+          290.0
+        ],
+        [
+          340.0,
+          290.0
+        ]
+      ],
+      "note": "blue triangle"
+    }
+  ]
+}

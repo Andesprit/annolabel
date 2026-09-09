@@ -1,7 +1,10 @@
 """Image source contract consumed by annotation and export logic."""
+
 from abc import ABC, abstractmethod
 from pathlib import Path
+
 from PIL import Image
+
 from annolabel.schemas.annotations import ImageInfo
 
 

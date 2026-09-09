@@ -1,0 +1,122 @@
+{
+  "astra": {
+    "reference_objects": 2,
+    "candidate_objects": 2,
+    "matched_objects": 2,
+    "missed_objects": [],
+    "extra_objects": [],
+    "label_errors": 0,
+    "mean_box_iou_missing_zero": 1.0,
+    "mean_mask_iou_missing_zero": 1.0,
+    "matches": [
+      {
+        "reference_key": "rectangle-1",
+        "candidate_key": "rectangle",
+        "reference_label": "red rectangle",
+        "candidate_label": "orange-red rectangle",
+        "box_iou": 1.0,
+        "mask_iou": 1.0,
+        "label_correct": true
+      },
+      {
+        "reference_key": "triangle-1",
+        "candidate_key": "triangle",
+        "reference_label": "blue triangle",
+        "candidate_label": "blue triangle",
+        "box_iou": 1.0,
+        "mask_iou": 1.0,
+        "label_correct": true
+      }
+    ]
+  },
+  "claude": {
+    "reference_objects": 2,
+    "candidate_objects": 2,
+    "matched_objects": 2,
+    "missed_objects": [],
+    "extra_objects": [],
+    "label_errors": 1,
+    "mean_box_iou_missing_zero": 1.0,
+    "mean_mask_iou_missing_zero": 0.9941366417403127,
+    "matches": [
+      {
+        "reference_key": "rectangle-1",
+        "candidate_key": "obj1",
+        "reference_label": "red rectangle",
+        "candidate_label": "orange_red_square",
+        "box_iou": 1.0,
+        "mask_iou": 1.0,
+        "label_correct": false
+      },
+      {
+        "reference_key": "triangle-1",
+        "candidate_key": "obj2",
+        "reference_label": "blue triangle",
+        "candidate_label": "blue_triangle",
+        "box_iou": 1.0,
+        "mask_iou": 0.9882732834806254,
+        "label_correct": true
+      }
+    ]
+  },
+  "gemini": {
+    "reference_objects": 2,
+    "candidate_objects": 2,
+    "matched_objects": 2,
+    "missed_objects": [],
+    "extra_objects": [],
+    "label_errors": 1,
+    "mean_box_iou_missing_zero": 1.0,
+    "mean_mask_iou_missing_zero": 0.9895538168746035,
+    "matches": [
+      {
+        "reference_key": "rectangle-1",
+        "candidate_key": "shapes_obj1_orange_square",
+        "reference_label": "red rectangle",
+        "candidate_label": "orange square",
+        "box_iou": 1.0,
+        "mask_iou": 1.0,
+        "label_correct": false
+      },
+      {
+        "reference_key": "triangle-1",
+        "candidate_key": "shapes_obj2_blue_triangle",
+        "reference_label": "blue triangle",
+        "candidate_label": "blue triangle",
+        "box_iou": 1.0,
+        "mask_iou": 0.9791076337492071,
+        "label_correct": true
+      }
+    ]
+  },
+  "luna": {
+    "reference_objects": 2,
+    "candidate_objects": 2,
+    "matched_objects": 2,
+    "missed_objects": [],
+    "extra_objects": [],
+    "label_errors": 1,
+    "mean_box_iou_missing_zero": 0.973523559448884,
+    "mean_mask_iou_missing_zero": 0.9725411771647279,
+    "matches": [
+      {
+        "reference_key": "rectangle-1",
+        "candidate_key": "orange_square",
+        "reference_label": "red rectangle",
+        "candidate_label": "orange square",
+        "box_iou": 0.9743950630650138,
+        "mask_iou": 0.9745258759241402,
+        "label_correct": false
+      },
+      {
+        "reference_key": "triangle-1",
+        "candidate_key": "blue_triangle",
+        "reference_label": "blue triangle",
+        "candidate_label": "blue triangle",
+        "box_iou": 0.9726520558327544,
+        "mask_iou": 0.9705564784053156,
+        "label_correct": true
+      }
+    ]
+  }
+}
