@@ -1,0 +1,55 @@
+{
+  "classifications": [
+    {
+      "label": "geometric shapes"
+    }
+  ],
+  "objects": [
+    {
+      "key": "rectangle-1",
+      "label": "red rectangle",
+      "box": [
+        60,
+        90,
+        240,
+        290
+      ],
+      "polygon": [
+        [
+          60,
+          90
+        ],
+        [
+          240,
+          90
+        ],
+        [
+          240,
+          290
+        ],
+        [
+          60,
+          290
+        ]
+      ]
+    },
+    {
+      "key": "triangle-1",
+      "label": "blue triangle",
+      "polygon": [
+        [
+          340,
+          290
+        ],
+        [
+          440,
+          70
+        ],
+        [
+          550,
+          290
+        ]
+      ]
+    }
+  ]
+}
