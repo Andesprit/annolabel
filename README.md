@@ -30,33 +30,33 @@ Astra annotated the 12 prominent objects in this image using LabelKit: one annot
 Requirements:
 
 - Python **3.11 or later**. This checkout selects Python 3.14 through `.python-version`.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git for the installation examples below.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/). Git is only needed for installing from GitHub or working on the source.
 - An image-capable agent with access to your image files and a shell, if you want the agent to label them.
 
 Runtime dependencies are Pillow and Pydantic. LabelKit itself requires no API keys, model downloads, GPU, or labeling service. Your agent uses its own authentication and may send images to its model provider.
 
 ### Install with uv
 
-After the first PyPI release is published, install without Git or GitHub authentication:
+Install from [PyPI](https://pypi.org/project/andesprit-labelkit/) without cloning, Git, or GitHub authentication:
 
 ```sh
 uv tool install andesprit-labelkit
 labelkit --help
 ```
 
-The distribution name is `andesprit-labelkit`; the executable remains `labelkit`. PyPI's `labelkit` name belongs to an unrelated project. See [publishing instructions](docs/publishing.md) for release setup and status.
+The distribution name is `andesprit-labelkit`; the executable remains `labelkit`. PyPI's `labelkit` name belongs to an unrelated project. To update, run `uv tool upgrade andesprit-labelkit`. See [publishing instructions](docs/publishing.md) for future releases.
 
-You can also install the existing tagged version directly from Git:
+You can also install the tagged version directly from Git:
 
 ```sh
-uv tool install 'git+https://github.com/Andesprit/labelkit.git@v0.4.1'
+uv tool install 'git+https://github.com/Andesprit/labelkit.git@v0.4.2'
 labelkit --version
 labelkit --help
 ```
 
 The command is **`uv tool install`**, not `uv install`. It installs an isolated CLI environment and puts `labelkit` on your executable path. A separate clone is unnecessary for this installation.
 
-The repository is private, so Git must be authenticated with an account that has access. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
+Only the Git installation requires an authenticated account with access to the private repository. The PyPI installation is public. If your shell cannot find the installed command, run `uv tool update-shell` and restart the shell. See uv's [tool installation guide](https://docs.astral.sh/uv/guides/tools/) for details.
 
 Use `andesprit-labelkit` when installing from PyPI; `uv tool install labelkit` and `pip install labelkit` refer to a different project.
 
