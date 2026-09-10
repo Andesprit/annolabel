@@ -13,6 +13,6 @@ The code and documentation are available under [MIT](LICENSE). The following gen
 
 ## Underwater demonstration image
 
-`docs/images/astra-photo-original.png` is derived from the photograph supplied by the project owner during development. `docs/images/astra-photo-annotated.png` is its annotation overlay. Their original creator and redistribution license have not been confirmed in the asset record. **These two images are excluded from the MIT grant until that confirmation is recorded.** Do not treat them as MIT-licensed benchmark data. The README and reproducible evaluation use the generated shapes instead.
+`docs/images/astra-photo-original.png` is derived from the photograph supplied by the project owner during development. `docs/images/astra-photo-annotated.png` is its annotation overlay, featured in the README at the project owner's request. Their original creator and redistribution license have not been confirmed in the asset record. **These two images are excluded from the MIT grant until that confirmation is recorded.** Do not treat them as MIT-licensed benchmark data. The reproducible evaluation uses the generated shapes instead.
 
 Contributors must document the origin and redistribution license of any added asset. A model's annotation does not change the underlying image's license.
