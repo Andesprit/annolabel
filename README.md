@@ -25,30 +25,33 @@ annolabel --help
 
 Installs from [PyPI](https://pypi.org/project/annolabel/). No Git or cloning required. Supports Python 3.11–3.14 on Linux, macOS, and Windows; see [compatibility](docs/compatibility.md). If the command is not found, run `uv tool update-shell` and restart your shell.
 
-## Ask your agent to label an image
+## Example prompts
 
-Replace the paths and task, then paste this into your agent:
+Paste one of these into your agent and replace the image path.
+
+### Classify the whole image
 
 ```text
-Use the installed annolabel CLI to label /absolute/path/to/photo.jpg.
-Identify every prominent object with a descriptive label, a tight bounding
-box, and a polygon tracing its visible silhouette. Note uncertain identities.
-
-Run annolabel task IMAGE --output /absolute/path/to/new-task-directory.
-Open the returned view. Coordinates use its original pixel dimensions:
-(0,0) at the top-left, x right, y down.
-
-Submit all classifications and objects together with annolabel submit
-TASK --file JSON_FILE. Open the returned review view once. If needed,
-submit one corrected complete snapshot using the NEW task handle,
-retaining unchanged objects. Stop after that correction and report uncertainty.
-
-Use your own vision; do not call detectors or segmentation models.
-Use annolabel COMMAND --help for arguments and task-status for recovery.
-Export COCO with annolabel export IMAGE --output /absolute/path/to/new-dataset.
+Use AnnoLabel to classify /path/to/photo.jpg as indoor or outdoor.
 ```
 
-The workflow is **task → submit → review → optional correction → export**. [Submission JSON and complete guide](docs/usage.md) · [Reusable agent instructions](docs/agent-prompt.md).
+### Draw bounding boxes
+
+```text
+Use AnnoLabel to draw tight bounding boxes around every person in
+/path/to/photo.jpg. Review the boxes and export the labels as COCO.
+```
+
+### Segment with polygons
+
+```text
+Use AnnoLabel to trace each leaf in /path/to/photo.jpg with a polygon
+along its visible outline. Review the polygons and export the labels as COCO.
+```
+
+Replace the classes and objects with whatever you want to label.
+
+[Detailed usage guide](docs/usage.md) · [Reusable agent instructions](docs/agent-prompt.md).
 
 ## Try an example without an LLM
 
