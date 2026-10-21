@@ -11,7 +11,6 @@ from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.task import Task, TaskError, start_task
 from tests.helpers import cli, save
 
-
 CONTEXT = {"guide", "submission", "next"}
 
 
@@ -523,9 +522,7 @@ def test_guide_states_label_and_geometry_rules(
     assert all(text in guide for text in expected) and f"Geometry: {geometry}." in guide
 
 
-def test_legacy_bundle_without_working_copy_keeps_old_replies(
-    source: Path, tmp_path: Path
-) -> None:
+def test_legacy_bundle_without_working_copy_keeps_old_replies(source: Path, tmp_path: Path) -> None:
     initial = start_task(str(source), str(tmp_path / "task"))
     Path(initial["submission"]).unlink()  # bundles written before working copies existed
     core = {"status", "task", "view", "objects", "passes_left"}
