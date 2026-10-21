@@ -3,19 +3,31 @@
 import argparse
 import json
 import sys
-from pathlib import Path
+from shlex import quote
 
 from pydantic import ValidationError
 
 from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.export import export_dataset
-from annolabel.core.task import Task, TaskError, start_task
+from annolabel.core.inputs import parse_json, read_text
+from annolabel.core.task import Task, start_task
 from annolabel.core.workflow import Workflow
-from annolabel.modules.batch import BatchValidationError
+from annolabel.modules.validation import InputError, validation_details
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        command = self.prog.partition(" ")[2]
+        invocation = "annolabel" + (f" {command}" if command else "")
+        raise InputError(
+            "INVALID_ARGUMENTS",
+            message,
+            f"Run {invocation} --help and correct the named argument or flag.",
+        )
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         description="Annotate images directly. No model calls. JSON results on stdout."
     )
     parser.add_argument("--version", action="version", version="annolabel 0.5.1")
@@ -148,10 +160,79 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _payload(args: argparse.Namespace) -> str:
+    text = sys.stdin.read() if args.file == "-" else read_text(args.file, "--file")
+    source = "--file - (stdin)" if args.file == "-" else f"--file {args.file!r}"
+    parse_json(text, source)
+    return text
+
+
+def _recovery(args: argparse.Namespace) -> str:
+    image = quote(getattr(args, "image", getattr(args, "source", "IMAGE")))
+    info = f"Run annolabel info {image}"
+    return {
+        "task": "Correct the named task input and retry annolabel task with a new --output directory.",
+        "submit": 'Correct all listed fields in --file and retry the same task handle with a complete snapshot; use "classifications": [] when there are none.',
+        "task-status": "Pass the task.json returned by annolabel task, submit, or task-status; restore any missing checkpoint files.",
+        "prepare": "Correct the named input or rule and retry annolabel prepare with a new --output directory.",
+        "apply": "Correct the complete snapshot in --file and retry; for a stale revision, run annolabel prepare IMAGE --output NEW_DIR and reconcile with its annotations.json.",
+        "review": "Correct --regions, --packet, --per-page (1..4) or --padding (>0..2) as named, then retry with a new --output directory.",
+        "export": "Correct the named source or --categories vocabulary, then retry annolabel export SOURCE --output NEW_DATASET; use a new output directory.",
+        "info": "Check the image path and the named .labels.json sidecar; restore the original image or repair the sidecar before retrying annolabel info.",
+        "label": f"{info} to read current annotations; pass a nonempty --label and an existing --id when replacing one.",
+        "box": f"{info} for dimensions and IDs; correct --xyxy X1 Y1 X2 Y2 so 0 <= X1 < X2 <= width and 0 <= Y1 < Y2 <= height. Use an existing --id/--object-id when supplied.",
+        "polygon": f"{info} for dimensions and IDs; correct --points or --points-file to a JSON array of at least three distinct boundary points inside the image; do not repeat the first point. Use an existing --id/--object-id when supplied.",
+        "link": f"{info} and pass --ids with at least two distinct existing box/polygon annotation IDs sharing a label and enclosing geometry.",
+        "remove": f"{info} and pass --id with the existing annotation ID to remove.",
+        "render": "Pass a new .png --output path (or --force to replace a preview) and --grid >= 0; keep output separate from the source image and sidecar.",
+        "mask": f"{info} and pass --id for an existing polygon; use a new .png --output path (or --force to replace a mask).",
+    }[args.command]
+
+
+def _failure(error: OSError | ValueError, args: argparse.Namespace | None) -> dict:
+    if isinstance(error, InputError):
+        result = {"error": str(error), "code": error.code, "recovery": error.recovery}
+        if error.details is not None:
+            result["details"] = error.details
+        return result
+    recovery = _recovery(args)
+    source = getattr(args, "image", getattr(args, "source", getattr(args, "task", "input")))
+    if isinstance(error, ValidationError):
+        return {
+            "error": f"Invalid {args.command} input for {source!r}.",
+            "code": "VALIDATION_ERROR",
+            "recovery": recovery,
+            "details": validation_details(error),
+        }
+    if isinstance(error, FileExistsError):
+        path = error.filename or getattr(args, "output", "output")
+        return {
+            "error": f"Output already exists: {path!r}.",
+            "code": "OUTPUT_EXISTS",
+            "recovery": "Pass a new --output path; use --force only when replacing an existing preview or mask.",
+        }
+    if isinstance(error, OSError):
+        path = error.filename or source
+        reason = error.strerror or (
+            str(error) if error.errno is None else "file is unavailable or is not a readable image"
+        )
+        return {
+            "error": f"Cannot access {path!r}: {reason}.",
+            "code": "IO_ERROR",
+            "recovery": f"Check that {path!r} exists and is readable/writable as needed. {recovery}",
+        }
+    return {
+        "error": f"{args.command} for {source!r}: {error}",
+        "code": "VALIDATION_ERROR",
+        "recovery": recovery,
+    }
+
+
 def main() -> None:
     """Run one operation; failures exit with status 2."""
-    args = _parser().parse_args()
+    args = None
     try:
+        args = _parser().parse_args()
         if args.command in {"task", "submit", "task-status"}:
             if args.command == "task":
                 result = start_task(
@@ -163,11 +244,7 @@ def main() -> None:
                     max_passes=args.max_passes,
                 )
             elif args.command == "submit":
-                payload = (
-                    sys.stdin.read()
-                    if args.file == "-"
-                    else Path(args.file).expanduser().read_text()
-                )
+                payload = _payload(args)
                 result = Task(args.task).submit(payload)
             else:
                 result = Task(args.task).status()
@@ -183,11 +260,7 @@ def main() -> None:
                     geometry=args.geometry,
                 )
             elif args.command == "apply":
-                payload = (
-                    sys.stdin.read()
-                    if args.file == "-"
-                    else Path(args.file).expanduser().read_text()
-                )
+                payload = _payload(args)
                 result = workflow.apply(
                     payload,
                     output=args.output or workflow.default_review_output(args.file),
@@ -216,9 +289,12 @@ def main() -> None:
                 points = [args.xyxy[:2], args.xyxy[2:]]
             elif args.command == "polygon":
                 if args.points_file:
-                    points = json.loads(Path(args.points_file).expanduser().read_text())
+                    points = parse_json(
+                        read_text(args.points_file, "--points-file"),
+                        f"--points-file {args.points_file!r}",
+                    )
                 else:
-                    points = json.loads(args.points)
+                    points = parse_json(args.points, "--points")
             result = kit.annotate(
                 args.command,
                 args.label,
@@ -243,34 +319,7 @@ def main() -> None:
             )
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
     except (OSError, ValueError) as error:
-        result = {"error": str(error)}
-        if args.command in {"task", "submit", "task-status"}:
-            result["code"] = (
-                error.code
-                if isinstance(error, TaskError)
-                else ("VALIDATION_ERROR" if isinstance(error, ValueError) else "IO_ERROR")
-            )
-            result["recovery"] = (
-                error.recovery
-                if isinstance(error, TaskError)
-                else (
-                    "Correct the submitted JSON or path and retry the same command. Do not inspect implementation or reconstruct hashes."
-                )
-            )
-            if isinstance(error, ValidationError):
-                result["error"] = "Invalid task or submission JSON."
-                result["details"] = error.errors(
-                    include_url=False, include_context=False, include_input=False
-                )[:3]
-        if args.command in {"prepare", "apply", "review"}:
-            result["code"] = "VALIDATION_ERROR" if isinstance(error, ValueError) else "IO_ERROR"
-            if isinstance(error, ValidationError):
-                result["details"] = error.errors(
-                    include_url=False, include_context=False, include_input=False
-                )
-        if isinstance(error, BatchValidationError):
-            result["details"] = error.details
-        print(json.dumps(result, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps(_failure(error, args), ensure_ascii=False), file=sys.stderr)
         raise SystemExit(2) from None
 
 

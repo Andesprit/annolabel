@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
+from annolabel.core.inputs import read_model
 from annolabel.modules.images import polygon_mask, render
 from annolabel.schemas.annotations import Annotation, Document, Point
 from annolabel.services.images.base import ImageServiceBase
@@ -24,7 +25,12 @@ class AnnoLabel:
         self.sidecar = self.path.with_name(self.path.name + ".labels.json")
         self.image, info = self.image_service.load(self.path)
         if self.sidecar.exists():
-            self.document = Document.model_validate_json(self.sidecar.read_text())
+            self.document = read_model(
+                str(self.sidecar),
+                Document,
+                "annotation sidecar",
+                "Restore or repair the named .labels.json sidecar before editing; existing annotations were not changed.",
+            )
             if self.document.image != info:
                 raise ValueError(
                     "source image differs from its annotation sidecar; restore the original image or move the old sidecar before starting again"
@@ -98,7 +104,9 @@ class AnnoLabel:
             raise ValueError("link requires at least two different annotation IDs")
         by_id = {a.id: a for a in self.document.annotations}
         if any(i not in by_id for i in annotation_ids):
-            raise ValueError("one or more annotation IDs were not found")
+            raise ValueError(
+                f"annotation IDs not found: {[i for i in annotation_ids if i not in by_id]}; available IDs: {list(by_id)}"
+            )
         selected = [by_id[i] for i in annotation_ids]
         if any(a.kind == "label" for a in selected):
             raise ValueError("whole-image labels cannot be linked to objects")

@@ -1,25 +1,42 @@
 """Prepare, atomically apply, and review agent annotation snapshots."""
 
-import json
 import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from annolabel.core.annolabel import AnnoLabel
-from annolabel.modules.batch import batch_document, check_packet, revision
+from annolabel.core.inputs import parse_json, read_categories, read_model, read_text
+from annolabel.modules.batch import batch_document, check_packet, parse_snapshot, revision
+from annolabel.modules.validation import InputError, validation_details
 from annolabel.modules.views import write_bundle
-from annolabel.schemas.workflow import Batch, Packet, Region, Rules
+from annolabel.schemas.workflow import Packet, Region, Rules
 
 
 class Workflow(AnnoLabel):
     """Agent workflow facade over the existing annotation sidecars."""
 
     def _packet(self, path: str | None) -> Packet | None:
-        packet = Packet.model_validate_json(Path(path).expanduser().read_text()) if path else None
+        packet = (
+            read_model(
+                path,
+                Packet,
+                "--packet",
+                "Pass the packet.json returned by prepare, task, or the latest review for this image.",
+            )
+            if path
+            else None
+        )
         if packet:
-            check_packet(packet, self.document)
+            try:
+                check_packet(packet, self.document)
+            except ValueError as error:
+                raise InputError(
+                    "VALIDATION_ERROR",
+                    f"Invalid --packet file {path!r}: {error}",
+                    "Pass the packet.json returned by prepare, task, or the latest review for this image.",
+                ) from None
         return packet
 
     def prepare(
@@ -34,14 +51,8 @@ class Workflow(AnnoLabel):
         """Create original/grid views, current snapshot, schema, and task context."""
         rules = Rules(
             geometry=geometry,
-            **(
-                {"instructions": Path(instructions).expanduser().read_text()}
-                if instructions
-                else {}
-            ),
-            categories=json.loads(Path(categories).expanduser().read_text())
-            if categories
-            else None,
+            **({"instructions": read_text(instructions, "--instructions")} if instructions else {}),
+            categories=read_categories(categories) if categories else None,
         )
         return write_bundle(
             self.image, self.document, output, rules=rules, prepare=True, short=short
@@ -58,11 +69,18 @@ class Workflow(AnnoLabel):
     ) -> dict:
         """Create paired original/annotated views for objects or supplied regions."""
         packet = self._packet(packet_path)
-        selected = (
-            TypeAdapter(list[Region]).validate_json(Path(regions).expanduser().read_text())
-            if regions
-            else None
-        )
+        selected = None
+        if regions:
+            data = parse_json(read_text(regions, "--regions"), f"--regions file {regions!r}")
+            try:
+                selected = TypeAdapter(list[Region]).validate_python(data)
+            except ValidationError as error:
+                raise InputError(
+                    "VALIDATION_ERROR",
+                    f"Invalid --regions file {regions!r}.",
+                    "Supply --regions as a JSON array of {key, box:[x1,y1,x2,y2]} objects in source pixels.",
+                    validation_details(error),
+                ) from None
         return write_bundle(
             self.image,
             self.document,
@@ -83,8 +101,8 @@ class Workflow(AnnoLabel):
         extra_files: dict[str, dict] | None = None,
     ) -> dict:
         """Replace a full snapshot and render its review; failures preserve labels."""
-        batch = Batch.model_validate_json(payload)
         packet = self._packet(packet_path)
+        batch = parse_snapshot(payload, self.document, packet)
         document = batch_document(batch, self.document, packet)
         bundle = write_bundle(
             self.image,

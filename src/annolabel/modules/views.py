@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from annolabel.modules.batch import snapshot
+from annolabel.modules.validation import InputError
 from annolabel.schemas.annotations import Document
 from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
@@ -97,7 +98,11 @@ def write_bundle(
         raise ValueError("per_page must be 1..4 and padding must be > 0 and <= 2")
     destination = Path(output).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
-        raise ValueError("view output already exists; choose a new directory")
+        raise InputError(
+            "OUTPUT_EXISTS",
+            f"Output directory already exists: {str(destination)!r}.",
+            "Pass a new directory with --output; the existing directory was not replaced.",
+        )
     if regions is not None and len({r.key for r in regions}) != len(regions):
         raise ValueError("region keys must be unique")
     selected = []
@@ -297,7 +302,11 @@ def write_bundle(
                 raise ValueError("extra bundle files must use unique plain filenames")
             (temporary / name).write_text(json.dumps(data, indent=2) + "\n")
         if destination.exists() or destination.is_symlink():
-            raise ValueError("view output appeared while rendering")
+            raise InputError(
+                "OUTPUT_EXISTS",
+                f"Output directory appeared while writing: {str(destination)!r}.",
+                "Pass a new directory with --output; the existing directory was not replaced.",
+            )
         os.rename(temporary, destination)
     finally:
         if temporary.exists():

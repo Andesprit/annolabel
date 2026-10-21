@@ -4,19 +4,20 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from shlex import quote
 
+from pydantic import ValidationError
+
+from annolabel.core.inputs import read_model
 from annolabel.core.workflow import Workflow
-from annolabel.modules.batch import batch_document, revision
+from annolabel.modules.batch import batch_document, parse_snapshot, revision
+from annolabel.modules.validation import InputError
 from annolabel.schemas.task import Submission, TaskHandle
 from annolabel.schemas.workflow import Batch
 
 
-class TaskError(ValueError):
+class TaskError(InputError):
     """Actionable task failure without implementation details."""
-
-    def __init__(self, code: str, message: str, recovery: str) -> None:
-        super().__init__(message)
-        self.code, self.recovery = code, recovery
 
 
 def start_task(
@@ -64,9 +65,20 @@ class Task:
 
     def __init__(self, path: str) -> None:
         self.path = Path(path).expanduser().absolute()
-        self.handle = TaskHandle.model_validate_json(self.path.read_text())
+        self.handle = read_model(
+            str(self.path),
+            TaskHandle,
+            "task handle",
+            "Pass the task.json returned by annolabel task, submit, or task-status; "
+            "do not pass a categories file, snapshot, or packet.",
+        )
         self.workflow = Workflow(self.handle.image)
-        self.snapshot = Batch.model_validate_json(Path(self.handle.snapshot).read_text())
+        self.snapshot = read_model(
+            self.handle.snapshot,
+            Batch,
+            "task snapshot",
+            "Restore the task snapshot from this checkpoint; do not reconstruct hashes or revisions.",
+        )
         self.next_dir = self.path.parent / f"pass{self.handle.pass_count + 1}"
 
     def _check_current(self, expected_revision: str) -> None:
@@ -100,7 +112,15 @@ class Task:
 
     def submit(self, payload: str) -> dict:
         """Validate and save all annotations; an identical retry replays its receipt."""
-        submission = Submission.model_validate_json(payload)
+        try:
+            submission = Submission.model_validate_json(payload)
+        except ValidationError:
+            submission = parse_snapshot(
+                payload,
+                self.workflow.document,
+                self.workflow._packet(self.handle.packet),
+                short=True,
+            )
         digest = hashlib.sha256(submission.model_dump_json().encode()).hexdigest()
         if self.next_dir.exists():
             receipt = json.loads((self.next_dir / "receipt.json").read_text())
@@ -108,7 +128,7 @@ class Task:
                 raise TaskError(
                     "CHECKPOINT_USED",
                     "This checkpoint already saved a different submission.",
-                    f"Run annolabel task-status {self.path} and use the returned task for a correction.",
+                    f"Run annolabel task-status {quote(str(self.path))} and use the returned task for a correction.",
                 )
             self._check_current(receipt["saved_revision"])
             return receipt["result"]

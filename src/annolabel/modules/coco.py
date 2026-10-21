@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from annolabel.modules.validation import InputError
 from annolabel.schemas.annotations import Document
 from annolabel.services.images.base import ImageServiceBase
 
@@ -28,7 +29,11 @@ def export_coco(
     """
     destination = Path(output).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
-        raise ValueError("export output already exists; choose a new directory")
+        raise InputError(
+            "OUTPUT_EXISTS",
+            f"Output directory already exists: {str(destination)!r}.",
+            "Pass a new directory with --output; the existing directory was not replaced.",
+        )
     labels = sorted({a.label for _, doc in items for a in doc.annotations if a.kind != "label"})
     if categories is None:
         categories = labels
@@ -137,7 +142,11 @@ def export_coco(
             "No train/validation split is inferred. Reuse categories.json for consistent class IDs.\n"
         )
         if destination.exists() or destination.is_symlink():
-            raise ValueError("export output appeared during export; choose a new directory")
+            raise InputError(
+                "OUTPUT_EXISTS",
+                f"Output directory appeared while writing: {str(destination)!r}.",
+                "Pass a new directory with --output; the existing directory was not replaced.",
+            )
         os.rename(temporary, destination)
     finally:
         if temporary.exists():

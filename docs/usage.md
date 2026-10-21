@@ -295,18 +295,19 @@ Annotations live next to each source as `photo.jpg.labels.json`. Version 2 sidec
 
 Task directories contain source/review PNGs, internal packets and snapshots, task handles, and saved receipts. They use absolute paths and are working state, not a portable training format. Keep the image, sidecar, and task directory in place while a task is active. Use COCO export to move a dataset between machines.
 
-Most operational errors are JSON on stderr with exit code `2`; successful results are JSON on stdout with exit code `0`. Argument-parsing failures use argparse's normal text usage message. Short task errors include a `code` and `recovery` hint.
+Failures, including argument-parsing errors, return one JSON object on stderr with exit code `2`; successful results remain JSON on stdout with exit code `0`. Every failure includes `error`, `code`, and a specific `recovery` step. Validation `details` are plain strings naming fields and object indexes/keys, such as `objects[0] (leaf1): box requires x1 < x2 and y1 < y2`. Fix all reported problems together and retry the same unconsumed handle with a complete snapshot. Failed validation does not save annotations or consume a pass. If there are no scene classes, include `"classifications": []`.
 
 | Problem | What to do |
 |---|---|
+| `INVALID_ARGUMENTS` | Correct the named flag or argument; run `annolabel COMMAND --help` for allowed values. |
 | `VALIDATION_ERROR` | Fix the reported JSON/geometry issue and retry the same unconsumed handle. |
 | `CHECKPOINT_USED` | Run `task-status` on the initial handle; use the latest returned handle for a different snapshot. |
 | `TASK_CONFLICT` | Stop and reconcile source/annotation changes; do not reconstruct hashes to force an overwrite. |
 | `PASS_LIMIT` | Stop this task and report uncertainty. Export remains available. |
 | `IO_ERROR` | Check paths and access. Use absolute paths when the agent's working directory is uncertain. |
-| Output already exists | Choose a new task, review, or export directory. `render` and `mask` can explicitly overwrite their PNGs with `--force`. |
+| `OUTPUT_EXISTS` | Choose a new task, review, or export directory. `render` and `mask` can explicitly overwrite their PNGs with `--force`. |
 | Annotation outlines are shifted | Recheck original oriented dimensions and whether coordinates came from a resized or padded image. |
-| Folder export finds no sidecars | Annotate the source files first, then export the folder containing those files. |
+| `NO_ANNOTATIONS` | Run `task` and `submit` for the source images first, then export the folder containing their sidecars. |
 
 Current scope:
 
