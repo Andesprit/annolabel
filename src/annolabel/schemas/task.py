@@ -23,3 +23,23 @@ class TaskHandle(StrictModel):
     packet: str
     pass_count: int = Field(default=0, ge=0, le=2)
     max_passes: int = Field(default=2, ge=1, le=2)
+
+
+class FolderTaskEntry(StrictModel):
+    """Source image and its ordinary initial task checkpoint."""
+
+    image: str
+    task: str
+    view: str
+    width: int
+    height: int
+    passes_left: int
+
+
+class FolderTaskIndex(StrictModel):
+    """Immutable index of independently submittable image tasks."""
+
+    version: Literal[1] = 1
+    kind: Literal["folder"] = "folder"
+    source: str
+    tasks: list[FolderTaskEntry]

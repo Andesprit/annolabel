@@ -35,7 +35,7 @@ def _parser() -> argparse.ArgumentParser:
     task = commands.add_parser(
         "task", help="Start a short annotation task with a coordinate view and saved handle"
     )
-    task.add_argument("image")
+    task.add_argument("image", help="Source image or folder of source images")
     task.add_argument("--output", "-o", required=True)
     task.add_argument("--instructions")
     task.add_argument("--categories")

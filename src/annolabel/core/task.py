@@ -11,8 +11,9 @@ from pydantic import ValidationError
 from annolabel.core.inputs import read_model
 from annolabel.core.workflow import Workflow
 from annolabel.modules.batch import batch_document, parse_snapshot, revision, snapshot
+from annolabel.modules.discovery import IMAGE_SUFFIXES, discover_images
 from annolabel.modules.validation import InputError
-from annolabel.schemas.task import Submission, TaskHandle
+from annolabel.schemas.task import FolderTaskEntry, FolderTaskIndex, Submission, TaskHandle
 from annolabel.schemas.workflow import Batch
 
 
@@ -30,6 +31,15 @@ def start_task(
     max_passes: int = 2,
 ) -> dict:
     """Create a coordinate view and immutable initial task handle."""
+    if Path(image).expanduser().is_dir():
+        return _start_folder(
+            image,
+            output,
+            instructions=instructions,
+            categories=categories,
+            geometry=geometry,
+            max_passes=max_passes,
+        )
     workflow = Workflow(image)
     output_path = Path(output).expanduser().absolute()
     handle = TaskHandle(
@@ -57,6 +67,67 @@ def start_task(
         "width": workflow.image.width,
         "height": workflow.image.height,
         "passes_left": max_passes,
+    }
+
+
+def _start_folder(
+    source: str,
+    output: str,
+    *,
+    instructions: str | None,
+    categories: str | None,
+    geometry: str,
+    max_passes: int,
+) -> dict:
+    source_path = Path(source).expanduser().resolve(strict=True)
+    output_path = Path(output).expanduser().absolute()
+    if output_path.exists() or output_path.is_symlink():
+        raise InputError(
+            "OUTPUT_EXISTS",
+            f"Output directory already exists: {str(output_path)!r}.",
+            "Pass a new directory with --output; the existing directory was not replaced.",
+        )
+    images = discover_images(source_path, output_path.resolve())
+    if not images:
+        raise InputError(
+            "NO_IMAGES",
+            f"No source images found in input directory {str(source_path)!r}.",
+            "Pass a folder containing source images (supported extensions: "
+            + ", ".join(sorted(IMAGE_SUFFIXES))
+            + "); generated AnnoLabel bundles are excluded. Retry annolabel task FOLDER --output NEW_DIR.",
+        )
+    output_path.mkdir(parents=True)
+    try:
+        entries = []
+        for number, image in enumerate(images, start=1):
+            result = start_task(
+                str(image),
+                str(output_path / f"{number:06d}"),
+                instructions=instructions,
+                categories=categories,
+                geometry=geometry,
+                max_passes=max_passes,
+            )
+            entries.append(
+                FolderTaskEntry(
+                    image=str(image),
+                    **{key: value for key, value in result.items() if key != "status"},
+                )
+            )
+        index = FolderTaskIndex(source=str(source_path), tasks=entries)
+        index_path = output_path / "tasks.json"
+        index_path.write_text(index.model_dump_json(indent=2) + "\n")
+    except Exception:
+        shutil.rmtree(output_path)
+        raise
+    return {
+        "status": "ready",
+        "index": str(index_path),
+        "source": str(source_path),
+        "images": len(entries),
+        "tasks": [entry.model_dump() for entry in entries],
+        "next": "Open each view, then run annolabel submit TASK_JSON --file ANNOTATIONS_JSON "
+        f"using that image's task handle; start with {quote(entries[0].task)}.",
     }
 
 

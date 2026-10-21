@@ -24,6 +24,102 @@ def submission() -> dict:
     }
 
 
+def test_folder_start_creates_distinct_submittable_tasks(tmp_path: Path) -> None:
+    folder = tmp_path / "images"
+    for name in ["a.png", "b.png", "sub/a.png", "a.jpg"]:
+        image = folder / name
+        image.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (100, 80), "white").save(image)
+    (folder / "notes.txt").write_text("Not a source image")
+    # Previously generated views and datasets must not become new sources.
+    start_task(str(folder / "a.png"), str(folder / "previous-task"))
+    dataset = folder / "previous-export"
+    (dataset / "annotations").mkdir(parents=True)
+    (dataset / "annotations/instances_default.json").write_text("{}")
+    Image.new("RGB", (100, 80)).save(dataset / "export.png")
+    output = folder / "new-tasks"
+    initial = cli("task", folder, "-o", output, "--max-passes", 1)
+    assert initial["index"] == str(output / "tasks.json")
+    index = json.loads(Path(initial["index"]).read_text())
+    assert index["source"] == str(folder)
+    assert initial["tasks"] == index["tasks"]
+    tasks = initial["tasks"]
+    assert {Path(t["image"]).relative_to(folder).as_posix() for t in tasks} == {
+        "a.png",
+        "b.png",
+        "sub/a.png",
+        "a.jpg",
+    }
+    assert len({t["task"] for t in tasks}) == 4
+    assert "annolabel submit" in initial["next"]
+    for item in tasks:
+        assert item["passes_left"] == 1
+        saved = Task(item["task"]).submit(json.dumps(submission()))
+        assert saved["status"] == "saved" and saved["passes_left"] == 0
+        assert saved["changes"] == {"added": ["one"], "changed": [], "removed": []}
+        assert Task(item["task"]).status() == saved
+
+
+def test_folder_start_rejects_empty_and_used_output(tmp_path: Path) -> None:
+    folder = tmp_path / "images"
+    folder.mkdir()
+    output = tmp_path / "tasks"
+    error = cli("task", folder, "-o", output, success=False)
+    assert error["code"] == "NO_IMAGES" and str(folder) in error["error"]
+    assert error["recovery"] and not output.exists()
+    Image.new("RGB", (100, 80)).save(folder / "a.png")
+    output.mkdir()
+    marker = output / "keep.txt"
+    marker.write_text("Keep this file")
+    error = cli("task", folder, "-o", output, success=False)
+    assert error["code"] == "OUTPUT_EXISTS" and "--output" in error["recovery"]
+    assert marker.read_text() == "Keep this file"
+
+
+def test_folder_failure_cleans_up_and_forwards_rules(tmp_path: Path) -> None:
+    folder = tmp_path / "images"
+    folder.mkdir()
+    Image.new("RGB", (100, 80)).save(folder / "a.png")
+    bad = folder / "b.png"
+    bad.write_text("broken image")
+    output = tmp_path / "tasks"
+    error = cli("task", folder, "-o", output, success=False)
+    assert error["code"] == "IO_ERROR" and str(bad) in error["error"]
+    assert not output.exists() and not list(folder.glob("*.labels.json"))
+    bad.unlink()
+    categories = save(tmp_path / "categories.json", ["rectangle"])
+    instructions = tmp_path / "instructions.txt"
+    instructions.write_text("Find rectangles")
+    initial = cli(
+        "task",
+        folder,
+        "-o",
+        output,
+        "--categories",
+        categories,
+        "--instructions",
+        instructions,
+        "--geometry",
+        "polygons",
+    )
+    entry = initial["tasks"][0]
+    packet = json.loads((Path(entry["task"]).parent / "packet.json").read_text())
+    assert packet["rules"] == {
+        "categories": ["rectangle"],
+        "geometry": "polygons",
+        "instructions": "Find rectangles",
+        "boundary_policy": "visible",
+    }
+    bad_payload = {
+        "classifications": [],
+        "objects": [{"key": "one", "label": "circle", "box": [10, 10, 30, 30]}],
+    }
+    with pytest.raises(ValueError):
+        Task(entry["task"]).submit(json.dumps(bad_payload))
+    assert not (Path(entry["task"]).parent / "pass1").exists()
+    assert Task(entry["task"]).submit(json.dumps(submission()))["status"] == "saved"
+
+
 def test_short_task_two_passes_recovery_retry_and_export(source: Path, tmp_path: Path) -> None:
     initial = cli("task", source, "-o", tmp_path / "task")
     payload = save(tmp_path / "labels.json", submission())
