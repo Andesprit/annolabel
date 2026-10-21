@@ -141,6 +141,25 @@ annolabel submit /data/work/photo-task/pass1/task.json \
 
 An empty first submission is allowed when the handle's snapshot has no objects. A task started on an already annotated image still protects those saved objects, even on its first submission. The flag does not bypass validation, revision checks, or the pass limit. Identical retries replay their saved receipt even if `--allow-empty` is omitted on the retry.
 
+### Preview a risky correction (optional)
+
+Before spending a pass on a correction that removes or reshapes objects, you can look at it first. `preview` runs the same checks as `submit` (rules, labels, geometry, current source state, removal guard), then draws the candidate. It never saves, never uses a pass and never creates a task handle:
+
+```sh
+annolabel preview /data/work/photo-task/pass1/task.json \
+  --file /data/work/photo-task/pass1/submission.json \
+  --output /data/work/preview-1
+```
+
+The reply has `status: "unsaved"`, the prospective `changes` and removal `warnings`, `passes_left` (unchanged), and:
+
+- `view`: the candidate outlines on the source-sized view, as the saved view will look after submit. Compare it with `saved_view`.
+- `changes_view`: only when objects would be removed. Dashed white outlines labelled `REMOVED` show saved objects the candidate deletes. They are a diagnostic, not kept annotations. It is `null` when nothing is removed.
+- `candidate`: a read-only `candidate.json` holding exactly the validated snapshot shown, in original pixels.
+- `submit`: the exact ordinary submit command for the same task handle and `candidate.json`, with `--allow-empty` when the candidate removes every object (preview needs the same flag for that case).
+
+To save, run the `submit` command. Submit checks everything again and refuses with `TASK_CONFLICT` if the image or labels changed after the preview. To change the proposal, edit the task's `submission.json` and preview again to a NEW `--output`. A used handle returns `CHECKPOINT_USED` (run `task-status` for the latest handle) and a handle with no passes left returns `PASS_LIMIT`. The output must be new and outside any task, pass, folder-task, audit or preview directory (`OUTPUT_RESERVED`). Preview folders are marked by `preview.json` and are never counted as source images.
+
 If a command response is lost, recover the latest committed handle, view, guide, working copy and next step:
 
 ```sh
@@ -237,7 +256,7 @@ annolabel task-retry /data/work/image-tasks/tasks.json
 
 Folder start discovers files recursively by extension: `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tif`, `.tiff` and `.gif`, case-insensitively. Multi-frame images remain unsupported. Sources are sorted by resolved path and symlink aliases are deduplicated. Task directories are numbered `000001`, `000002`, and so on; the index maps each number to its source, so nested files and equal stems cannot collide. The index fixes the image list at creation.
 
-The new output directory and existing AnnoLabel bundles marked by `packet.json`, `tasks.json`, `audit.json` or `annotations/instances_default.json` are excluded from discovery. **Keep unmarked loose previews and masks outside the source folder**: they look like source images. Folder export uses annotation sidecars, rather than image extensions, and includes only images with saved sidecars. An empty folder or one containing no supported source images returns `NO_IMAGES` with recovery instructions.
+The new output directory and existing AnnoLabel bundles marked by `packet.json`, `tasks.json`, `audit.json`, `preview.json` or `annotations/instances_default.json` are excluded from discovery. **Keep unmarked loose previews and masks outside the source folder**: they look like source images. Folder export uses annotation sidecars, rather than image extensions, and includes only images with saved sidecars. An empty folder or one containing no supported source images returns `NO_IMAGES` with recovery instructions.
 
 An agent may group two independent submissions into one shell call:
 
@@ -365,6 +384,7 @@ Failures, including argument-parsing errors, return one JSON object on stderr wi
 | `TASK_CONFLICT` | Stop and reconcile source/annotation changes; do not reconstruct hashes to force an overwrite. |
 | `PASS_LIMIT` | Stop this task and report uncertainty. Export remains available. |
 | `OBJECTS_REMOVED` | Keep the named saved objects in the complete snapshot, or retry the same handle with `--allow-empty` if removing all of them is intentional. No pass was used. |
+| `OUTPUT_RESERVED` | Pass a preview `--output` outside task, pass, folder-task, audit and preview directories. Nothing was written. |
 | `IO_ERROR` | Check paths and access. Use absolute paths when the agent's working directory is uncertain. |
 | `OUTPUT_EXISTS` | Choose a new task, review, or export directory. `render` and `mask` can explicitly overwrite their PNGs with `--force`. |
 | Annotation outlines are shifted | Recheck original oriented dimensions and whether coordinates came from a resized or padded image. |
@@ -404,5 +424,6 @@ Run `annolabel COMMAND --help` for full arguments.
 | `prepare IMAGE --output DIR` | Prepare full metadata, editable snapshot, and detailed views. |
 | `apply IMAGE --file JSON --packet PACKET --output DIR` | Apply a complete revision-aware snapshot and render detailed reviews. |
 | `review IMAGE --output DIR` | Render detailed review pages or custom regions. |
+| `preview TASK_JSON --file JSON --output DIR` | Optional: render an unsaved candidate and its removals before submit; uses no pass. |
 | `audit FOLDER --output DIR` | Read-only folder check: per-source status, label counts, issues and overview pages. |
 | `export IMAGE_OR_FOLDER --output DIR` | Export a COCO dataset. |

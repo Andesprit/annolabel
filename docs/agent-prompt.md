@@ -20,6 +20,9 @@ view once. Check labels, omissions, excess background, clipped contours and
 coordinate shifts. Only if needed, make one correction by editing the NEW
 returned submission file and submitting it with the new task handle, retaining
 every unchanged object and class. Then stop.
+If a correction removes or reshapes objects, you may first run preview with
+the new handle, the edited file and a new --output; open its view and
+changes_view, then run its exact submit command. Preview saves nothing.
 
 If output is lost, run task-status on the initial handle. Fix reported invalid
 JSON once and retry the same unconsumed handle. Stop on TASK_CONFLICT or PASS_LIMIT.

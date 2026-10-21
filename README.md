@@ -70,7 +70,7 @@ annolabel submit task/task.json --file shapes-submission.json
 annolabel export shapes.png --output dataset
 ```
 
-Here the example file stands in for the agent's work. In real use, read the returned `guide`, open the `view`, edit the returned `submission` file (it already holds any saved labels) and run the `submit` command named in `next`. Open `task/pass1/view.png` to review the result. The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
+Here the example file stands in for the agent's work. In real use, read the returned `guide`, open the `view`, edit the returned `submission` file (it already holds any saved labels) and run the `submit` command named in `next`. Open `task/pass1/view.png` to review the result. Before a risky correction, `annolabel preview TASK_JSON --file JSON --output NEW_DIR` shows the candidate and any removed objects without saving or using a pass; see [preview a risky correction](docs/usage.md#preview-a-risky-correction-optional). The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
 
 For a folder, start once and check progress:
 
