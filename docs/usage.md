@@ -218,6 +218,23 @@ annolabel task-status /data/work/image-tasks/tasks.json
 
 Status lists each source image with its latest `task`, `view`, `state` (`saved`, `pending`, or `error`), `objects` and `passes_left`, plus `totals` for images, saved and pending. Saved means a snapshot was submitted in this folder task, including an intentionally empty one. Pending totals include unresolved error entries. If a checkpoint is missing or damaged, its entry contains `error`, `code` and `recovery`; healthy entries remain available, and the overall status is `attention`. Resolve those errors before exporting. Passing the folder index to `submit` returns `IMAGE_TASK_REQUIRED` and directs you to a per-image handle.
 
+### Keep going when a source image fails
+
+By default, a folder start is all-or-nothing: if any source cannot be opened (for example a corrupt file or a sidecar that does not match its image), it returns that source's error, removes the new output directory and suggests `--keep-going`. Opt in to start the healthy images anyway:
+
+```sh
+annolabel task /data/images --output /data/work/image-tasks --keep-going
+# label the healthy images by following next; fix or replace the named file at the same path, then:
+annolabel task-retry /data/work/image-tasks/tasks.json
+```
+
+- Every discovered source keeps its numbered slot. A source that could not start appears in the start reply and in status with `state: error`, `error`, `code` and a `recovery` naming the `task-retry` command. It counts in `totals` (images and pending), never as saved.
+- **Exit code 0 does not mean every image is ready.** The start and status replies use `status: attention` while any source failed; check `status` and the per-image `state` before treating the folder as complete. Status offers the export command only when every source is saved.
+- While healthy images remain pending, `next` leads to the next image's guide and submit command and also names the unresolved sources. Once they are saved, `next` points to fixing and retrying, not to export.
+- `task-retry` starts only the sources that failed at start, into their reserved slots, with the instructions, categories, geometry and pass limit frozen in `tasks.json` at start. Changing or deleting the original rule files later does not matter. It never restarts, overwrites or resets a started or saved task, and does not enroll files added to the folder later. A retry that starts nothing says so; a source that is still broken stays listed with its error.
+- `task-retry` writes a small record under `retries/` before publishing a slot. If a retried task directory later goes missing, status reports `TASK_MISSING`: restore the directory instead of regenerating it. Only if `task-retry` was interrupted before it published the slot, delete the named record and run `task-retry` again.
+- Rule-file mistakes (`--instructions`, `--categories`) and output-directory failures are not per-image problems: they stop the whole start once, before any output is created.
+
 Folder start discovers files recursively by extension: `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tif`, `.tiff` and `.gif`, case-insensitively. Multi-frame images remain unsupported. Sources are sorted by resolved path and symlink aliases are deduplicated. Task directories are numbered `000001`, `000002`, and so on; the index maps each number to its source, so nested files and equal stems cannot collide. The index fixes the image list at creation.
 
 The new output directory and existing AnnoLabel bundles marked by `packet.json`, `tasks.json` or `annotations/instances_default.json` are excluded from discovery. **Keep unmarked loose previews and masks outside the source folder**: they look like source images. Folder export uses annotation sidecars, rather than image extensions, and includes only images with saved sidecars. An empty folder or one containing no supported source images returns `NO_IMAGES` with recovery instructions.
@@ -337,6 +354,8 @@ Failures, including argument-parsing errors, return one JSON object on stderr wi
 | Annotation outlines are shifted | Recheck original oriented dimensions and whether coordinates came from a resized or padded image. |
 | `NO_ANNOTATIONS` | Run `task` and `submit` for the source images first, then export the folder containing their sidecars. |
 | `NO_IMAGES` | Pass a folder containing supported source images; keep generated views outside it and use a new task output directory. |
+| `TASK_MISSING` | A task that `task-retry` started is missing: restore its directory. Delete the named `retries/` record only if `task-retry` was interrupted before publishing it. |
+| `FOLDER_INDEX_REQUIRED` | Pass the folder `tasks.json` to `task-retry`; it does not accept per-image handles. |
 | `IMAGE_TASK_REQUIRED` | Run `task-status` on the folder's `tasks.json`, then submit using the returned per-image `next_task`. |
 
 Current scope:
@@ -355,7 +374,9 @@ Run `annolabel COMMAND --help` for full arguments.
 |---|---|
 | `task IMAGE --output DIR` | Prepare a short task with a source-sized image view. |
 | `submit TASK --file JSON_OR_-` | Replace a complete annotation snapshot through a saved task handle. |
-| `task-status TASK` | Recover the latest task handle and view. |
+| `task-status TASK` | Recover the latest task handle and view, or folder progress from `tasks.json`. |
+| `task FOLDER --output DIR --keep-going` | Start healthy folder images even if some sources fail. |
+| `task-retry TASKS_JSON` | Start only the folder sources that failed, with the original rules. |
 | `info IMAGE` | Read source metadata and current annotations. |
 | `label IMAGE --label CLASS` | Add or update a scene classification. |
 | `box IMAGE --label CLASS --xyxy X1 Y1 X2 Y2` | Add or update a bounding box. |
