@@ -21,6 +21,32 @@ class TaskError(InputError):
     """Actionable task failure without implementation details."""
 
 
+def _context(result: dict, image: str) -> dict:
+    """Point a reply at its checkpoint guide and working copy; legacy bundles lack them."""
+    task = Path(result["task"])
+    guide, submission = task.parent / "guide.txt", task.parent / "submission.json"
+    if not submission.is_file():
+        return result
+    submit = f"annolabel submit {quote(str(task))} --file {quote(str(submission))}"
+    export = f"annolabel export {quote(image)} --output NEW_DATASET"
+    if result["status"] == "ready":
+        next_step = (
+            f"Read {quote(str(guide))}, open {quote(result['view'])}, edit {quote(str(submission))} "
+            f"as a complete snapshot, then run {submit}."
+        )
+    elif result["passes_left"]:
+        next_step = (
+            f"Open {quote(result['view'])} to review. If a correction is needed, edit "
+            f"{quote(str(submission))} and run {submit}; otherwise stop and run {export}."
+        )
+    else:
+        next_step = (
+            f"Open {quote(result['view'])} to review. No passes are left: stop labeling, report "
+            f"any uncertainty, then run {export}."
+        )
+    return {**result, "guide": str(guide), "submission": str(submission), "next": next_step}
+
+
 def start_task(
     image: str,
     output: str,
@@ -60,14 +86,17 @@ def start_task(
     except Exception:
         shutil.rmtree(output_path)
         raise
-    return {
-        "status": "ready",
-        "task": str(output_path / "task.json"),
-        "view": str(output_path / "view.png"),
-        "width": workflow.image.width,
-        "height": workflow.image.height,
-        "passes_left": max_passes,
-    }
+    return _context(
+        {
+            "status": "ready",
+            "task": str(output_path / "task.json"),
+            "view": str(output_path / "view.png"),
+            "width": workflow.image.width,
+            "height": workflow.image.height,
+            "passes_left": max_passes,
+        },
+        str(workflow.path),
+    )
 
 
 def _start_folder(
@@ -98,7 +127,7 @@ def _start_folder(
         )
     output_path.mkdir(parents=True)
     try:
-        entries = []
+        entries, first = [], None
         for number, image in enumerate(images, start=1):
             result = start_task(
                 str(image),
@@ -108,10 +137,11 @@ def _start_folder(
                 geometry=geometry,
                 max_passes=max_passes,
             )
+            first = first or result
             entries.append(
                 FolderTaskEntry(
                     image=str(image),
-                    **{key: value for key, value in result.items() if key != "status"},
+                    **{key: result[key] for key in FolderTaskEntry.model_fields if key != "image"},
                 )
             )
         index = FolderTaskIndex(source=str(source_path), tasks=entries)
@@ -127,10 +157,20 @@ def _start_folder(
         "images": len(entries),
         "tasks": [entry.model_dump() for entry in entries],
         "next_task": entries[0].task,
-        "next": f"Open {quote(entries[0].view)}, then run annolabel submit "
-        f"{quote(entries[0].task)} --file ANNOTATIONS_JSON. "
-        f"Run annolabel task-status {quote(str(index_path))} for folder progress.",
+        "next": _folder_next(first, str(index_path)),
     }
+
+
+def _folder_next(current: dict, index: str) -> str:
+    """Lead to one pending image's own context, then back to folder progress."""
+    if "submission" in current:
+        step = current["next"]
+    else:
+        step = (
+            f"Run annolabel task-status {quote(current['task'])} for its next step, then submit it "
+            f"with annolabel submit {quote(current['task'])} --file ANNOTATIONS_JSON."
+        )
+    return f"{step} Then run annolabel task-status {quote(index)} for folder progress."
 
 
 def _folder_index(path: str) -> FolderTaskIndex | None:
@@ -171,7 +211,7 @@ def submit_task(path: str, payload: str, *, allow_empty: bool = False) -> dict:
 
 
 def _folder_status(path: str, index: FolderTaskIndex) -> dict:
-    entries = []
+    entries, pending = [], None
     for entry in index.tasks:
         try:
             task = Task(entry.task)
@@ -188,6 +228,8 @@ def _folder_status(path: str, index: FolderTaskIndex) -> dict:
                     f"Task view is unavailable: {current['view']!r}.",
                     f"Restore the view {current['view']!r}, then run annolabel task-status {quote(path)}.",
                 )
+            if pending is None and current["status"] != "saved":
+                pending = current
             entries.append(
                 {
                     "image": entry.image,
@@ -225,12 +267,9 @@ def _folder_status(path: str, index: FolderTaskIndex) -> dict:
                 }
             )
     saved = sum(entry["state"] == "saved" for entry in entries)
-    pending = next((entry for entry in entries if entry["state"] == "pending"), None)
     errors = any(entry["state"] == "error" for entry in entries)
     if pending:
-        next_step = f"Open {quote(pending['view'])}, then run annolabel submit "
-        next_step += f"{quote(pending['task'])} --file ANNOTATIONS_JSON. "
-        next_step += f"Run annolabel task-status {quote(path)} for folder progress."
+        next_step = _folder_next(pending, path)
     elif errors:
         next_step = f"Resolve the per-image errors, then run annolabel task-status {quote(path)}."
     else:
@@ -287,14 +326,17 @@ class Task:
         self._check_current(self.snapshot.base_revision)
         receipt_path = self.path.parent / "receipt.json"
         if receipt_path.exists():
-            return json.loads(receipt_path.read_text())["result"]
-        return {
-            "status": "ready",
-            "task": str(self.path),
-            "view": str(self.path.parent / "view.png"),
-            "objects": len(self.snapshot.objects),
-            "passes_left": self.handle.max_passes - self.handle.pass_count,
-        }
+            return _context(json.loads(receipt_path.read_text())["result"], self.handle.image)
+        return _context(
+            {
+                "status": "ready",
+                "task": str(self.path),
+                "view": str(self.path.parent / "view.png"),
+                "objects": len(self.snapshot.objects),
+                "passes_left": self.handle.max_passes - self.handle.pass_count,
+            },
+            self.handle.image,
+        )
 
     def submit(self, payload: str, *, allow_empty: bool = False) -> dict:
         """Validate and save all annotations; an identical retry replays its receipt."""
@@ -317,7 +359,7 @@ class Task:
                     f"Run annolabel task-status {quote(str(self.path))} and use the returned task for a correction.",
                 )
             self._check_current(receipt["saved_revision"])
-            return receipt["result"]
+            return _context(receipt["result"], self.handle.image)
         if self.handle.pass_count >= self.handle.max_passes:
             raise TaskError(
                 "PASS_LIMIT",
@@ -379,4 +421,4 @@ class Task:
             short=True,
             extra_files={"task.json": next_handle.model_dump(), "receipt.json": receipt},
         )
-        return result
+        return _context(result, self.handle.image)

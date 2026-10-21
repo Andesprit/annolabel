@@ -12,6 +12,9 @@ from annolabel.core.task import Task, TaskError, start_task
 from tests.helpers import cli, save
 
 
+CONTEXT = {"guide", "submission", "next"}
+
+
 def submission() -> dict:
     return {
         "classifications": [{"label": "shapes"}],
@@ -213,8 +216,10 @@ def test_short_task_two_passes_recovery_retry_and_export(source: Path, tmp_path:
     payload = save(tmp_path / "labels.json", submission())
     first = cli("submit", initial["task"], "--file", payload)
     assert first["objects"] == 1 and first["passes_left"] == 1
-    assert len(json.dumps(first)) < 1000
-    assert set(first) == {"status", "task", "view", "objects", "passes_left", "changes"}
+    assert len(json.dumps(first)) < 2000
+    assert set(first) == {"status", "task", "view", "objects", "passes_left", "changes"} | CONTEXT
+    stored = json.loads((Path(first["task"]).parent / "receipt.json").read_text())["result"]
+    assert set(stored) == {"status", "task", "view", "objects", "passes_left", "changes"}
     assert first["changes"] == {"added": ["one"], "changed": [], "removed": []}
     assert cli("submit", initial["task"], "--file", payload) == first  # lost-response retry
     assert cli("task-status", initial["task"]) == first
@@ -365,7 +370,7 @@ def test_submission_reports_each_invalid_object_before_saving(source: Path, tmp_
     # The same handle still accepts a corrected complete snapshot.
     saved = cli("submit", initial["task"], "--file", "-", stdin=json.dumps(submission()))
     assert saved["objects"] == 1 and saved["passes_left"] == 1
-    assert set(saved) == {"status", "task", "view", "objects", "passes_left", "changes"}
+    assert set(saved) == {"status", "task", "view", "objects", "passes_left", "changes"} | CONTEXT
 
 
 def test_changes_use_saved_geometry_and_report_removed_keys(source: Path, tmp_path: Path) -> None:
@@ -440,3 +445,109 @@ def test_empty_first_save_allowed_only_when_previous_snapshot_has_no_objects(
     assert caught.value.code == "OBJECTS_REMOVED"
     assert annotation["annotation"]["object_id"] in caught.value.recovery
     assert not (tmp_path / "existing-task/pass1").exists()
+
+
+def test_working_copy_handoff_retains_state_and_isolates_edits(
+    source: Path, tmp_path: Path
+) -> None:
+    seed = submission()
+    seed["objects"][0]["note"] = "faint edge"
+    square = [[70, 5], [90, 5], [90, 25], [70, 25]]
+    seed["objects"].append({"key": "two", "label": "dot", "polygon": square})
+    Task(start_task(str(source), str(tmp_path / "seed"))["task"]).submit(json.dumps(seed))
+    rules = save(tmp_path / "rules.txt", "Outline every shape, even faint ones.")
+    labels = save(tmp_path / "labels.json", ["rectangle", "dot", 'say "hi", ok'])
+    initial = cli(
+        "task", source, "-o", tmp_path / "task", "--instructions", rules, "--categories", labels
+    )
+    guide = Path(initial["guide"]).read_text()
+    assert "Outline every shape, even faint ones." in guide
+    assert '["rectangle", "dot", "say \\"hi\\", ok"]' in guide
+    assert "Scene classifications are whole-image labels" in guide
+    assert "Geometry: both. Each object needs a polygon" in guide
+    assert "UNSAVED" in guide and "(0,0)" in guide
+    schema = json.loads((Path(initial["task"]).parent / "schema.json").read_text())
+    assert set(schema["properties"]) == {"classifications", "objects"}
+    working = Path(initial["submission"])
+    assert initial["next"].endswith(f"--file {working}.") and "Read" in initial["next"]
+    copy = json.loads(working.read_text())
+    assert copy == {
+        "classifications": [{"label": "shapes", "note": None}],
+        "objects": [
+            {**seed["objects"][0], "box": [10, 10, 60, 50]},
+            {**seed["objects"][1], "box": [70, 5, 90, 25], "note": None},
+        ],
+    }
+    internal = Path(initial["task"]).parent / "annotations.json"
+    frozen = internal.read_bytes()
+    copy["objects"][1]["box"] = [70, 5, 95, 30]
+    copy["objects"][1]["polygon"] = [[70, 5], [95, 5], [95, 30], [70, 30]]
+    working.write_text(json.dumps(copy))
+    edited = working.read_bytes()
+    # Status is read-only: it reports saved counts and leaves the unsaved edit alone.
+    assert cli("task-status", initial["task"]) == {
+        **{key: initial[key] for key in ["status", "task", "view", "passes_left"]},
+        "objects": 2,
+        **{key: initial[key] for key in CONTEXT},
+    }
+    assert internal.read_bytes() == frozen and working.read_bytes() == edited
+    first = cli("submit", initial["task"], "--file", working)
+    assert first["changes"] == {"added": [], "changed": ["two"], "removed": []}
+    assert internal.read_bytes() == frozen and working.read_bytes() == edited
+    assert cli("task-status", initial["task"]) == first  # lost response
+    assert cli("submit", initial["task"], "--file", working) == first  # exact replay
+    assert "If a correction is needed" in first["next"] and "export" in first["next"]
+    saved = {a["object_id"]: a for a in cli("info", source)["annotations"] if a["kind"] == "box"}
+    assert saved["one"]["note"] == "faint edge" and saved["two"]["points"] == [[70, 5], [95, 30]]
+    assert any(a["label"] == "shapes" for a in cli("info", source)["annotations"])
+    assert json.loads(Path(first["submission"]).read_text())["objects"][1]["box"] == [70, 5, 95, 30]
+    last = cli("submit", first["task"], "--file", first["submission"])
+    assert last["passes_left"] == 0 and last["changes"]["changed"] == []
+    assert "annolabel submit" not in last["next"] and "stop labeling" in last["next"]
+    assert last["next"].endswith(f"annolabel export '{source}' --output NEW_DATASET.")
+
+
+@pytest.mark.parametrize(
+    ("categories", "geometry", "expected"),
+    [
+        (None, "boxes", ["any label (unrestricted)", "a box [x1,y1,x2,y2] or a polygon"]),
+        ([], "polygons", ["none; this task allows no objects", "a missing box is derived"]),
+    ],
+)
+def test_guide_states_label_and_geometry_rules(
+    source: Path, tmp_path: Path, categories: list | None, geometry: str, expected: list
+) -> None:
+    labels = None if categories is None else str(save(tmp_path / "labels.json", categories))
+    task = start_task(str(source), str(tmp_path / "task"), categories=labels, geometry=geometry)
+    guide = Path(task["guide"]).read_text()
+    assert all(text in guide for text in expected) and f"Geometry: {geometry}." in guide
+
+
+def test_legacy_bundle_without_working_copy_keeps_old_replies(
+    source: Path, tmp_path: Path
+) -> None:
+    initial = start_task(str(source), str(tmp_path / "task"))
+    Path(initial["submission"]).unlink()  # bundles written before working copies existed
+    core = {"status", "task", "view", "objects", "passes_left"}
+    assert set(Task(initial["task"]).status()) == core
+    first = Task(initial["task"]).submit(json.dumps(submission()))
+    assert set(first) == core | {"changes"} | CONTEXT
+    assert set(Task(initial["task"]).submit(json.dumps(submission()))) == set(first)
+
+
+def test_folder_next_leads_to_pending_image_context(source: Path, tmp_path: Path) -> None:
+    from annolabel.core.task import task_status
+
+    folder = tmp_path / "images"
+    folder.mkdir()
+    for name in ["a.png", "b.png"]:
+        shutil.copyfile(source, folder / name)
+    initial = start_task(str(folder), str(tmp_path / "tasks"))
+    assert set(initial["tasks"][0]) == {"image", "task", "view", "width", "height", "passes_left"}
+    first = Task(initial["tasks"][0]["task"]).status()
+    assert first["next"] in initial["next"] and initial["index"] in initial["next"]
+    Task(initial["tasks"][0]["task"]).submit(json.dumps(submission()))
+    status = task_status(initial["index"])
+    second = Task(initial["tasks"][1]["task"]).status()
+    assert second["submission"] in status["next"] and second["next"] in status["next"]
+    assert "submission" not in status["tasks"][1]

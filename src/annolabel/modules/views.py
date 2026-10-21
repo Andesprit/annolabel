@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from annolabel.modules.batch import snapshot
 from annolabel.modules.validation import InputError
 from annolabel.schemas.annotations import Document
+from annolabel.schemas.task import Submission
 from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
 MARGIN_X, MARGIN_Y = 58, 50
@@ -263,7 +264,7 @@ def write_bundle(
         (temporary / "packet.json").write_text(packet.model_dump_json(indent=2) + "\n")
         (temporary / "annotations.json").write_text(json.dumps(snapshot(document), indent=2) + "\n")
         (temporary / "schema.json").write_text(
-            json.dumps(Batch.model_json_schema(), indent=2) + "\n"
+            json.dumps((Submission if short else Batch).model_json_schema(), indent=2) + "\n"
         )
         guide = (
             "You supply visual interpretation; AnnoLabel never runs inference.\n"
@@ -284,17 +285,40 @@ def write_bundle(
             "Validation is geometric, not a claim of visual accuracy. Report unresolved uncertainty; do not claim pixel-perfect output.\n"
         )
         if short:
+            if rules.categories is None:
+                labels = "any label (unrestricted)"
+            elif not rules.categories:
+                labels = "none; this task allows no objects"
+            else:
+                labels = "only " + json.dumps(rules.categories, ensure_ascii=False)
             guide = (
                 "You supply visual interpretation; AnnoLabel never runs inference.\n"
                 f"Open view.png: {image.width} x {image.height} EXIF-oriented source pixels, with no padding, grid or resizing.\n"
                 "The top-left image corner is (0,0); x increases right and y down. Use source pixels, not resized viewer pixels.\n"
-                "Submit task.json --file JSON_OR_- with classifications and objects as a COMPLETE snapshot.\n"
-                "Each object needs a stable unique key, label, and box [x1,y1,x2,y2] and/or polygon [[x,y],...].\n"
-                "A polygon alone gets its enclosing box. Trace ordered boundary vertices without repeating the first point.\n"
+                "\nResearcher instructions:\n"
+                f"{rules.instructions.strip()}\n"
+                f"\nObject labels: {labels}.\n"
+                "Scene classifications are whole-image labels; they are not restricted by the object labels.\n"
+                f"Geometry: {rules.geometry}. "
+                + (
+                    "Each object needs a box [x1,y1,x2,y2] or a polygon [[x,y],...].\n"
+                    if rules.geometry == "boxes"
+                    else "Each object needs a polygon [[x,y],...]; a missing box is derived from it.\n"
+                )
+                + "\nEdit submission.json, then submit it: annolabel submit task.json --file submission.json\n"
+                "submission.json starts as the saved state of this checkpoint, in submit format (schema.json).\n"
+                "It is a working copy: edits there are UNSAVED until submit succeeds, and editing it never changes\n"
+                "saved annotations. task-status reports saved counts and handles, not this file's contents.\n"
+                "Submit a COMPLETE snapshot: omitted objects and classifications are removed.\n"
+                "Each object needs a stable unique key and a label. Trace ordered boundary vertices without repeating the first point.\n"
                 "The task handle manages hashes and revisions; do not copy them into submissions.\n"
-                "Open the returned view to review outlines in the same source coordinate frame. Keep all unchanged objects\n"
-                "when correcting with the new task handle. If a response is lost, use task-status on the initial handle.\n"
+                "Open the returned view to review outlines in the same source coordinate frame. Correct only if needed,\n"
+                "keeping unchanged objects, with the new task handle. If a response is lost, use task-status on the initial handle.\n"
                 "Use note for uncertainty. Validation checks geometry, not visual accuracy.\n"
+            )
+            fields = ("classifications", "objects")
+            (temporary / "submission.json").write_text(
+                json.dumps({key: snapshot(document)[key] for key in fields}, indent=2) + "\n"
             )
         (temporary / "guide.txt").write_text(guide)
         for name, data in (extra_files or {}).items():
