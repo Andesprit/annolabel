@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from annolabel.core.inputs import read_model
 from annolabel.core.workflow import Workflow
-from annolabel.modules.batch import batch_document, parse_snapshot, revision
+from annolabel.modules.batch import batch_document, parse_snapshot, revision, snapshot
 from annolabel.modules.validation import InputError
 from annolabel.schemas.task import Submission, TaskHandle
 from annolabel.schemas.workflow import Batch
@@ -110,7 +110,7 @@ class Task:
             "passes_left": self.handle.max_passes - self.handle.pass_count,
         }
 
-    def submit(self, payload: str) -> dict:
+    def submit(self, payload: str, *, allow_empty: bool = False) -> dict:
         """Validate and save all annotations; an identical retry replays its receipt."""
         try:
             submission = Submission.model_validate_json(payload)
@@ -146,6 +146,24 @@ class Task:
         )
         packet = self.workflow._packet(self.handle.packet)
         document = batch_document(batch, self.workflow.document, packet)
+        previous = {obj.key: obj for obj in self.snapshot.objects}
+        current = {obj.key: obj for obj in Batch.model_validate(snapshot(document)).objects}
+        changes = {
+            "added": [key for key in current if key not in previous],
+            "changed": [
+                key for key in current if key in previous and current[key] != previous[key]
+            ],
+            "removed": [key for key in previous if key not in current],
+        }
+        removed = json.dumps(changes["removed"], ensure_ascii=False)
+        if previous and not current and not allow_empty:
+            raise TaskError(
+                "OBJECTS_REMOVED",
+                f"This snapshot would remove every saved object: {removed}.",
+                f"Keep the objects {removed} in the complete snapshot, or rerun annolabel submit "
+                f"{quote(str(self.path))} --file ANNOTATIONS_JSON --allow-empty to remove them "
+                "intentionally. Nothing was saved and no pass was used.",
+            )
         next_handle = TaskHandle(
             image=self.handle.image,
             snapshot=str(self.next_dir / "annotations.json"),
@@ -159,7 +177,10 @@ class Task:
             "view": str(self.next_dir / "view.png"),
             "objects": len(submission.objects),
             "passes_left": next_handle.max_passes - next_handle.pass_count,
+            "changes": changes,
         }
+        if changes["removed"]:
+            result["warnings"] = [f"Removed saved objects: {removed}. Omitted objects are deleted."]
         receipt = {
             "submission_sha256": digest,
             "saved_revision": revision(document),

@@ -3,8 +3,11 @@
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageOps
 
+from annolabel.core.annolabel import AnnoLabel
+from annolabel.core.task import Task, TaskError, start_task
 from tests.helpers import cli, save
 
 
@@ -27,7 +30,8 @@ def test_short_task_two_passes_recovery_retry_and_export(source: Path, tmp_path:
     first = cli("submit", initial["task"], "--file", payload)
     assert first["objects"] == 1 and first["passes_left"] == 1
     assert len(json.dumps(first)) < 1000
-    assert set(first) == {"status", "task", "view", "objects", "passes_left"}
+    assert set(first) == {"status", "task", "view", "objects", "passes_left", "changes"}
+    assert first["changes"] == {"added": ["one"], "changed": [], "removed": []}
     assert cli("submit", initial["task"], "--file", payload) == first  # lost-response retry
     assert cli("task-status", initial["task"]) == first
     assert not list(Path(first["view"]).parent.glob("review-*.png"))
@@ -40,6 +44,7 @@ def test_short_task_two_passes_recovery_retry_and_export(source: Path, tmp_path:
     assert used["code"] == "CHECKPOINT_USED" and "task-status" in used["recovery"]
     second = cli("submit", first["task"], "--file", correction)
     assert second["passes_left"] == 0
+    assert second["changes"] == {"added": [], "changed": ["one"], "removed": []}
     assert cli("task-status", initial["task"]) == second
     assert {a["id"] for a in before} == {a["id"] for a in cli("info", source)["annotations"]}
     assert (
@@ -173,7 +178,81 @@ def test_submission_reports_each_invalid_object_before_saving(source: Path, tmp_
     )
     assert not (tmp_path / "task/pass1").exists()
     assert not Path(str(source) + ".labels.json").exists()
-    # The same handle still accepts a corrected complete snapshot with the original receipt shape.
+    # The same handle still accepts a corrected complete snapshot.
     saved = cli("submit", initial["task"], "--file", "-", stdin=json.dumps(submission()))
     assert saved["objects"] == 1 and saved["passes_left"] == 1
-    assert set(saved) == {"status", "task", "view", "objects", "passes_left"}
+    assert set(saved) == {"status", "task", "view", "objects", "passes_left", "changes"}
+
+
+def test_changes_use_saved_geometry_and_report_removed_keys(source: Path, tmp_path: Path) -> None:
+    initial = start_task(str(source), str(tmp_path / "task"), geometry="boxes")
+    objects = [
+        {"key": key, "label": "square", "box": [10, 10, 30, 30]}
+        for key in ["label", "box", "note", "drop"]
+    ]
+    objects.append({"key": "keep", "label": "triangle", "polygon": [[0, 0], [10, 0], [5, 10]]})
+    first = Task(initial["task"]).submit(json.dumps({"classifications": [], "objects": objects}))
+    assert first["changes"] == {
+        "added": ["label", "box", "note", "drop", "keep"],
+        "changed": [],
+        "removed": [],
+    }
+    objects[0]["label"] = "rectangle"
+    objects[1]["box"] = [10, 10, 40, 40]
+    objects[2]["note"] = "uncertain"
+    objects.pop(3)
+    # A derived box and explicit identity view do not change the polygon's geometry.
+    objects[-1]["view_id"] = "view"
+    objects.append({"key": "new", "label": "square", "box": [40, 40, 50, 50]})
+    payload = json.dumps({"classifications": [], "objects": objects})
+    second = Task(first["task"]).submit(payload)
+    assert second["changes"] == {
+        "added": ["new"],
+        "changed": ["label", "box", "note"],
+        "removed": ["drop"],
+    }
+    assert "drop" in second["warnings"][0]
+    assert Task(first["task"]).submit(payload) == second
+    assert Task(initial["task"]).status() == second
+
+
+def test_empty_correction_requires_opt_in_without_writing_or_using_pass(
+    source: Path, tmp_path: Path
+) -> None:
+    initial = start_task(str(source), str(tmp_path / "task"))
+    first = Task(initial["task"]).submit(json.dumps(submission()))
+    empty = json.dumps({"classifications": [{"label": "empty scene"}], "objects": []})
+    before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    with pytest.raises(TaskError) as caught:
+        Task(first["task"]).submit(empty)
+    assert caught.value.code == "OBJECTS_REMOVED"
+    assert "--allow-empty" in caught.value.recovery and "one" in caught.value.recovery
+    assert {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+    assert Task(initial["task"]).status() == first
+    second = Task(first["task"]).submit(empty, allow_empty=True)
+    assert second["objects"] == 0 and second["passes_left"] == 0
+    assert second["changes"] == {"added": [], "changed": [], "removed": ["one"]}
+    assert "one" in second["warnings"][0]
+    assert Task(first["task"]).submit(empty) == second  # replay precedes the opt-in guard
+    assert Task(first["task"]).submit(empty, allow_empty=True) == second
+    assert Task(initial["task"]).status() == second
+
+
+def test_empty_first_save_allowed_only_when_previous_snapshot_has_no_objects(
+    source: Path, tmp_path: Path
+) -> None:
+    empty = json.dumps({"classifications": [], "objects": []})
+    initial = start_task(str(source), str(tmp_path / "empty-task"))
+    saved = Task(initial["task"]).submit(empty)
+    assert saved["objects"] == 0 and saved["passes_left"] == 1
+    assert saved["changes"] == {"added": [], "changed": [], "removed": []}
+    assert "warnings" not in saved
+    assert Task(initial["task"]).submit(empty) == saved
+    kit = AnnoLabel(str(source))
+    annotation = kit.annotate("box", "square", [(10, 10), (30, 30)])
+    existing = start_task(str(source), str(tmp_path / "existing-task"))
+    with pytest.raises(TaskError) as caught:
+        Task(existing["task"]).submit(empty)
+    assert caught.value.code == "OBJECTS_REMOVED"
+    assert annotation["annotation"]["object_id"] in caught.value.recovery
+    assert not (tmp_path / "existing-task/pass1").exists()

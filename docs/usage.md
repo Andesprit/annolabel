@@ -112,7 +112,7 @@ An image viewer may scale a large PNG. Always reason in the original dimensions 
 A successful submission returns a compact receipt resembling:
 
 ```json
-{"status":"saved","task":"/data/work/photo-task/pass1/task.json","view":"/data/work/photo-task/pass1/view.png","objects":12,"passes_left":1}
+{"status":"saved","task":"/data/work/photo-task/pass1/task.json","view":"/data/work/photo-task/pass1/view.png","objects":2,"passes_left":1,"changes":{"added":["car1","car2"],"changed":[],"removed":[]}}
 ```
 
 Open that `view`, then submit a corrected full snapshot only if needed:
@@ -123,6 +123,17 @@ annolabel submit /data/work/photo-task/pass1/task.json \
 ```
 
 Use the returned handle, rather than guessing paths. A second submission returns `passes_left: 0`. By default each task allows two successful submissions. Use `--max-passes 1` when creating a task to permit only one. Invalid submissions do not consume a pass.
+
+The `changes` field lists added, changed, and removed object keys compared with the submitted handle's saved snapshot. Changes include label, geometry, or note edits. Receipts also include `warnings` when a snapshot removes saved objects, listing their keys. Keep unchanged objects in a correction: omitted objects are deleted.
+
+A snapshot that would remove **every** previously saved object fails with `OBJECTS_REMOVED`, without writing files or consuming a pass. If the empty result is intentional, retry the same handle and complete snapshot with `--allow-empty`:
+
+```sh
+annolabel submit /data/work/photo-task/pass1/task.json \
+  --file /data/work/empty-labels.json --allow-empty
+```
+
+An empty first submission is allowed when the handle's snapshot has no objects. A task started on an already annotated image still protects those saved objects, even on its first submission. The flag does not bypass validation, revision checks, or the pass limit. Identical retries replay their saved receipt even if `--allow-empty` is omitted on the retry.
 
 If a command response is lost, recover the latest committed handle and view:
 
@@ -304,6 +315,7 @@ Failures, including argument-parsing errors, return one JSON object on stderr wi
 | `CHECKPOINT_USED` | Run `task-status` on the initial handle; use the latest returned handle for a different snapshot. |
 | `TASK_CONFLICT` | Stop and reconcile source/annotation changes; do not reconstruct hashes to force an overwrite. |
 | `PASS_LIMIT` | Stop this task and report uncertainty. Export remains available. |
+| `OBJECTS_REMOVED` | Keep the named saved objects in the complete snapshot, or retry the same handle with `--allow-empty` if removing all of them is intentional. No pass was used. |
 | `IO_ERROR` | Check paths and access. Use absolute paths when the agent's working directory is uncertain. |
 | `OUTPUT_EXISTS` | Choose a new task, review, or export directory. `render` and `mask` can explicitly overwrite their PNGs with `--force`. |
 | Annotation outlines are shifted | Recheck original oriented dimensions and whether coordinates came from a resized or padded image. |

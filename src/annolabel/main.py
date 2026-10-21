@@ -48,6 +48,9 @@ def _parser() -> argparse.ArgumentParser:
     submit.add_argument(
         "--file", required=True, help="JSON with classifications and objects only, or - for stdin"
     )
+    submit.add_argument(
+        "--allow-empty", action="store_true", help="Allow a snapshot to remove all saved objects"
+    )
     status = commands.add_parser(
         "task-status", help="Recover the latest task handle and view after lost output"
     )
@@ -245,7 +248,7 @@ def main() -> None:
                 )
             elif args.command == "submit":
                 payload = _payload(args)
-                result = Task(args.task).submit(payload)
+                result = Task(args.task).submit(payload, allow_empty=args.allow_empty)
             else:
                 result = Task(args.task).status()
             print(json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":")))

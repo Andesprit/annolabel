@@ -128,3 +128,42 @@ def test_existing_output_names_path_and_keeps_contents(
     assert error["code"] == "OUTPUT_EXISTS"
     assert str(output) in error["error"] and "--output" in error["recovery"]
     assert output.read_bytes() == b"keep this existing file"
+
+
+def test_submit_allow_empty_flag_preserves_retry_contract(
+    source: Path, tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from annolabel.core.task import Task, start_task
+    from annolabel.main import main
+
+    initial = start_task(str(source), str(tmp_path / "task"), geometry="boxes")
+    first = Task(initial["task"]).submit(
+        json.dumps(
+            {
+                "classifications": [],
+                "objects": [{"key": "one", "label": "square", "box": [10, 10, 30, 30]}],
+            }
+        )
+    )
+    payload = tmp_path / "empty.json"
+    payload.write_text('{"classifications": [], "objects": []}')
+    args = ["annolabel", "submit", first["task"], "--file", str(payload)]
+    monkeypatch.setattr(sys, "argv", args)
+    with pytest.raises(SystemExit) as caught:
+        main()
+    assert caught.value.code == 2
+    output = capsys.readouterr()
+    assert not output.out
+    error = json.loads(output.err)
+    assert error["code"] == "OBJECTS_REMOVED"
+    assert "one" in error["recovery"] and "--allow-empty" in error["recovery"]
+    monkeypatch.setattr(sys, "argv", [*args, "--allow-empty"])
+    main()
+    output = capsys.readouterr()
+    assert not output.err
+    saved = json.loads(output.out)
+    assert saved["objects"] == 0 and saved["passes_left"] == 0
+    monkeypatch.setattr(sys, "argv", args)
+    main()
+    output = capsys.readouterr()
+    assert not output.err and json.loads(output.out) == saved
