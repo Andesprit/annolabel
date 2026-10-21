@@ -81,7 +81,7 @@ annolabel task-status /data/work/image-tasks/tasks.json
 
 Follow `next`: it names the pending image's guide, view, editable `submission` file and exact `submit` command. Status names the next handle and, when all images are saved, the exact export command. If one image cannot be opened, the folder start stops and creates nothing; add `--keep-going` to start the healthy images, then fix the named file and run `annolabel task-retry /data/work/image-tasks/tasks.json`. Status can exit 0 with `status: attention`: read it before exporting. Keep loose previews and masks outside the source folder. See the [folder workflow](docs/usage.md#label-folders-and-batch-agent-work).
 
-Before training, `annolabel audit /data/images --output /data/work/audit-1` can check the whole folder without changing it. It lists unannotated and broken images, counts every label exactly as written, and draws overview pages. See [check a folder before export](docs/usage.md#check-a-folder-before-export-optional).
+Before training, `annolabel audit /data/images --output /data/work/audit-1` can check the whole folder without changing it. It lists unannotated and broken images, counts every label exactly as written, draws overview pages and lists noted objects and scene classes with a focused review command each. See [check a folder before export](docs/usage.md#check-a-folder-before-export-optional).
 
 ## Learn more
 
