@@ -15,6 +15,8 @@ from annolabel.core.export import export_dataset
 from annolabel.core.task import start_task
 from annolabel.modules.overview import PAGE_MAX_H, PAGE_W
 from annolabel.modules.validation import InputError
+from annolabel.schemas.audit import AuditReport
+from tests.helpers import cli
 
 
 def image(path: Path, size: tuple[int, int] = (100, 80)) -> Path:
@@ -170,3 +172,104 @@ def test_output_is_protected_and_failures_leave_nothing(tmp_path: Path) -> None:
         with pytest.raises(OSError, match="disk full"):
             audit_folder(str(folder), str(tmp_path / "out"))
     assert sorted(p.name for p in tmp_path.iterdir()) == ["existing", "images", "link"]
+
+
+def noted_folder(folder: Path) -> dict[str, str]:
+    linked = AnnoLabel(str(image(folder / "linked.png")))
+    box = linked.annotate("box", "cell", [(10, 10), (60, 50)], note="blurred edge")
+    ids = {"linked": box["annotation"]["object_id"]}
+    linked.annotate(
+        "polygon",
+        "cell",
+        [(12, 12), (58, 12), (58, 48)],
+        object_id=ids["linked"],
+        note="blurred edge",
+    )
+    linked.annotate("box", "cell", [(20, 20), (70, 60)])  # overlapping unnoted sibling
+    linked.annotate("box", "cell", [(1, 1), (9, 9)], note="   ")  # blank: not a note
+    exif = Image.Exif()
+    exif[0x0112] = 6  # stored 40x90 portrait, oriented 90x40 landscape
+    rotated = folder / "it's ünï" / "rot 'q'.jpg"
+    rotated.parent.mkdir(parents=True)
+    Image.new("RGB", (40, 90)).save(rotated, exif=exif)
+    shape = AnnoLabel(str(rotated))
+    long_label = "x" * 150
+    first = shape.annotate("box", long_label, [(70, 5), (88, 30)], note=" keep spaces ")
+    ids["rotated"] = first["annotation"]["object_id"]
+    shape.annotate(
+        "polygon", long_label, [(72, 6), (86, 6), (86, 29)], object_id=ids["rotated"], note='"q" é'
+    )
+    shape.annotate("polygon", "edge", [(0, 30), (10, 40), (0, 40)], note="touches corner")
+    scene = AnnoLabel(str(image(folder / "scene.png")))
+    scene.annotate("label", "shapes", [], note="Bookkeeping: recorded by Ana.")
+    AnnoLabel(str(image(folder / "plain.png"))).annotate("box", "cell", [(5, 5), (20, 20)])
+    image(folder / "bad.png")
+    (folder / "bad.png.labels.json").write_text("{")
+    return ids
+
+
+def test_noted_items_queue_lists_literal_notes_with_focused_actions(tmp_path: Path) -> None:
+    folder = tmp_path / "images"
+    ids = noted_folder(folder)
+    before = hashes(folder)
+    out = tmp_path / "audit"
+    reply = audit_folder(str(folder), str(out))
+    assert hashes(folder) == before
+    assert sorted(p.name for p in out.rglob("*.png")) == ["page-001.png"]
+    assert reply["noted_items"] == 4 and reply["notes"] == str(out / "notes.json")
+    assert "notes.json" in reply["next"] and "not an uncertainty" in reply["next"]
+    queue = json.loads((out / "notes.json").read_text())
+    assert queue["count"] == 4 and "not an uncertainty" in queue["note"]
+    report = json.loads((out / "audit.json").read_text())
+    assert report["noted_items"] == 4 and report["notes"] == reply["notes"]
+    items = {(i["image"], i["label"][:4]): i for i in queue["items"]}
+    assert [i["item"] for i in queue["items"]] == ["note-001", "note-002", "note-003", "note-004"]
+
+    # A linked box+polygon with one repeated note is one item with the note once.
+    linked = items[("linked.png", "cell")]
+    assert linked["object_id"] == ids["linked"] and linked["notes"] == ["blurred edge"]
+    assert linked["geometry"] == ["box", "polygon"] and len(linked["annotation_ids"]) == 2
+    assert linked["region"]["box"] == [10, 10, 60, 50]
+    assert sum(i["image"] == "linked.png" for i in queue["items"]) == 1  # sibling/blank skipped
+
+    # Distinct notes kept literally; a long label is cut in the key, never the item ID.
+    rotated = items[("it's ünï/rot 'q'.jpg", "xxxx")]
+    assert rotated["notes"] == [" keep spaces ", '"q" é'] and rotated["label"] == "x" * 150
+    assert rotated["region"]["key"].startswith("note-") and len(rotated["region"]["key"]) == 100
+    assert rotated["region"]["box"] == [70, 5, 88, 30]
+    edge = items[("it's ünï/rot 'q'.jpg", "edge")]
+    assert edge["geometry"] == ["polygon"] and edge["region"]["box"] == [0, 30, 10, 40]
+    scene = items[("scene.png", "shap")]
+    assert scene["kind"] == "classification" and scene["region"] is None
+    assert scene["notes"] == ["Bookkeeping: recorded by Ana."] and "overview.png" in scene["open"]
+    source = next(s for s in report["sources"] if s["image"] == "scene.png")
+    assert scene["annotation_ids"] == [source["classifications"][0]["id"]]
+    assert scene["annotation_revision"] and scene["image_sha256"]
+
+    # Region files exist after publication and the quoted actions run as written.
+    for item in (rotated, edge):
+        region = json.loads(Path(item["region"]["file"]).read_text())
+        assert region == [{"key": item["region"]["key"], "box": item["region"]["box"]}]
+    for name, item in [("obj", edge), ("scene", scene)]:
+        argv = shlex.split(item["review"].replace("NEW_REVIEW_DIR", str(tmp_path / name)))
+        assert argv[2] == item["path"]
+        result = cli(*argv[1:])
+        assert len(result["review_pages"]) == (1 if name == "obj" else 0)
+        assert (tmp_path / name / "overview.png").is_file()
+    crop = json.loads((tmp_path / "obj" / "packet.json").read_text())["views"]
+    assert any(v["source_rect"] == [0, 14, 26, 40] for v in crop), crop
+    assert hashes(folder) == before
+
+
+def test_no_notes_gives_empty_queue_and_old_reports_still_load(tmp_path: Path) -> None:
+    folder = tmp_path / "images"
+    AnnoLabel(str(image(folder / "a.png"))).annotate("box", "cell", [(5, 5), (20, 20)])
+    reply = audit_folder(str(folder), str(tmp_path / "audit"))
+    assert reply["noted_items"] == 0 and "notes.json" not in reply["next"]
+    queue = json.loads(Path(reply["notes"]).read_text())
+    assert queue["count"] == 0 and queue["items"] == []
+    assert list((tmp_path / "audit" / "notes").iterdir()) == []
+    old = json.loads(Path(reply["report"]).read_text())
+    del old["noted_items"], old["notes"]
+    legacy = AuditReport.model_validate(old)
+    assert legacy.noted_items == 0 and legacy.notes is None

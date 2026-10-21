@@ -65,6 +65,46 @@ class AuditTotals(StrictModel):
     classifications: int
 
 
+class NoteRegion(StrictModel):
+    """The original-coordinate region an object note item's review action enlarges."""
+
+    key: str
+    box: tuple[float, float, float, float]
+    file: str
+
+
+class NoteItem(StrictModel):
+    """One saved object or scene class that carries explicit nonblank note text."""
+
+    item: str
+    kind: Literal["object", "classification"]
+    source_id: int
+    image: str
+    path: str
+    image_sha256: str
+    annotation_revision: str
+    label: str
+    notes: list[str]
+    annotation_ids: list[str]
+    object_id: str | None = None
+    tag: int | None = None
+    geometry: list[Literal["box", "polygon"]] | None = None
+    region: NoteRegion | None = None
+    review: str
+    open: str
+
+
+class NoteQueue(StrictModel):
+    """notes.json: a point-in-time reading list of noted items, not a review status."""
+
+    version: Literal[1] = 1
+    observed_at: str
+    source: str
+    note: str
+    count: int
+    items: list[NoteItem]
+
+
 class AuditReport(StrictModel):
     """Self-contained audit.json written beside the overview pages."""
 
@@ -79,3 +119,5 @@ class AuditReport(StrictModel):
     pages: list[str]
     sources: list[AuditSource]
     orphan_sidecars: list[OrphanSidecar]
+    noted_items: int = 0
+    notes: str | None = None

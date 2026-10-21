@@ -1,5 +1,6 @@
 """Read-only dataset audit: inventory, label counts and overview pages for a source folder."""
 
+import json
 import os
 import shutil
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 from shlex import quote
 
 from annolabel.core.inputs import read_model
+from annolabel.modules.batch import revision
 from annolabel.modules.discovery import (
     IMAGE_SUFFIXES,
     SIDECAR_SUFFIX,
@@ -24,6 +26,9 @@ from annolabel.schemas.audit import (
     AuditReport,
     AuditSource,
     AuditTotals,
+    NoteItem,
+    NoteQueue,
+    NoteRegion,
     OrphanSidecar,
 )
 from annolabel.services.images.base import ImageServiceBase
@@ -37,6 +42,77 @@ NOTE = (
     "action starts a NEW task with fresh passes from the saved labels; it does not resume an "
     "earlier task handle. Replace the NEW_..._DIR placeholders with directories that do not exist."
 )
+
+QUEUE_NOTE = (
+    "Point-in-time reading list of saved objects and scene classes with explicit nonblank notes. "
+    "A note is literal researcher text (it may be bookkeeping); it is not an uncertainty, "
+    "confidence or review status, and items without notes are not reviewed or correct. Linked box "
+    "and polygon geometry is one item; repeated identical note text is listed once. An object's "
+    "review action enlarges its saved region: other annotations inside that crop are drawn too, so "
+    "the target is the item's region key, not every outline shown. A classification's action "
+    "reviews the whole image; open its overview.png. Actions load the CURRENT saved labels and do "
+    "not check this item's image_sha256 or annotation_revision; after changes, audit again to a "
+    "new --output. Replace NEW_REVIEW_DIR with a directory that does not exist."
+)
+
+
+def _noted(entry: AuditSource, document: Document, start: int, folder: Path) -> list[NoteItem]:
+    """List noted objects and classes of one saved source, numbered from start."""
+    by_id = {a.id: a for a in document.annotations}
+    base = {
+        "source_id": entry.id,
+        "image": entry.image,
+        "path": entry.path,
+        "image_sha256": document.image.sha256,
+        "annotation_revision": revision(document),
+    }
+    items = []
+    for obj in entry.objects:
+        members = [by_id[i] for i in obj.annotation_ids]
+        notes = list(dict.fromkeys(a.note for a in members if a.note and a.note.strip()))
+        if not notes:
+            continue
+        name = f"note-{start + len(items):03}"
+        xs, ys = zip(*(p for a in members for p in a.points))
+        file = folder / "notes" / f"{name}.json"
+        region = NoteRegion(
+            key=f"{name} {obj.label}"[:100],
+            box=(min(xs), min(ys), max(xs), max(ys)),
+            file=str(file),
+        )
+        items.append(
+            NoteItem(
+                **base,
+                item=name,
+                kind="object",
+                label=obj.label,
+                notes=notes,
+                annotation_ids=obj.annotation_ids,
+                object_id=obj.object_id,
+                tag=obj.tag,
+                geometry=obj.geometry,
+                region=region,
+                review=f"annolabel review {quote(entry.path)} --regions {quote(str(file))} "
+                "--output NEW_REVIEW_DIR",
+                open="review-001.png in NEW_REVIEW_DIR: the crop titled with this region key",
+            )
+        )
+    for classification in entry.classifications:
+        if not (classification.note and classification.note.strip()):
+            continue
+        items.append(
+            NoteItem(
+                **base,
+                item=f"note-{start + len(items):03}",
+                kind="classification",
+                label=classification.label,
+                notes=[classification.note],
+                annotation_ids=[classification.id],
+                review=f"annolabel review {quote(entry.path)} --output NEW_REVIEW_DIR",
+                open="overview.png in NEW_REVIEW_DIR: the whole image this scene class describes",
+            )
+        )
+    return items
 
 
 def _inspect(
@@ -193,6 +269,7 @@ def audit_folder(
         )
         pages = OverviewPages(temporary, len(images), notice)
         sources = []
+        noted: list[NoteItem] = []
         for number, image in enumerate(images, start=1):
             try:
                 rel = image.relative_to(source_path).as_posix()
@@ -202,11 +279,27 @@ def audit_folder(
             entry, pixels, document = _inspect(service, image, number, rel, page)
             pages.add(entry, pixels, document)
             sources.append(entry)
+            if document is not None:
+                noted += _noted(entry, document, len(noted) + 1, destination)
             del pixels, document
         saved = [s for s in sources if s.status == "saved"]
         objects = [o for s in saved for o in s.objects]
+        observed = datetime.now(UTC).isoformat(timespec="seconds")
+        (temporary / "notes").mkdir()
+        for item in noted:
+            if item.region is not None:
+                region = [{"key": item.region.key, "box": list(item.region.box)}]
+                (temporary / "notes" / f"{item.item}.json").write_text(json.dumps(region) + "\n")
+        queue = NoteQueue(
+            observed_at=observed,
+            source=str(source_path),
+            note=QUEUE_NOTE,
+            count=len(noted),
+            items=noted,
+        )
+        (temporary / "notes.json").write_text(queue.model_dump_json(indent=2) + "\n")
         report = AuditReport(
-            observed_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            observed_at=observed,
             source=str(source_path),
             note=NOTE,
             totals=AuditTotals(
@@ -227,6 +320,8 @@ def audit_folder(
             pages=sorted({s.page for s in sources}),
             sources=sources,
             orphan_sidecars=orphans,
+            noted_items=len(noted),
+            notes=str(destination / "notes.json"),
         )
         (temporary / "audit.json").write_text(report.model_dump_json(indent=2) + "\n")
         os.rename(temporary, destination)
@@ -248,6 +343,11 @@ def audit_folder(
         )
     if issues:
         steps.append(f"Resolve the {len(issues)} listed issue(s) using each recovery step.")
+    if noted:
+        steps.append(
+            f"{len(noted)} saved item(s) carry explicit notes: notes.json lists each with its "
+            "literal text and a focused review action (a note is not an uncertainty or review status)."
+        )
     steps.append(
         "Open every page, then use a source's review action for detail. After changes, audit again "
         "to a new --output; this report is not updated."
@@ -260,6 +360,8 @@ def audit_folder(
         "object_labels": report.object_labels,
         "scene_classes": report.scene_classes,
         "issues": issues,
+        "noted_items": len(noted),
+        "notes": report.notes,
         "next": " ".join(steps),
         "note": "Saved is not reviewed or training ready; see the report note.",
     }
