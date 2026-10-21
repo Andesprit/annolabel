@@ -6,12 +6,12 @@
 
 ### Recommended workflow: task → submit → review → optional correction
 
-1. Start a task for one image with `annolabel task`.
-2. Open the returned `view` with the agent's image tool.
-3. Submit all scene labels and objects together using `annolabel submit`.
+1. Start a task for one image with `annolabel task`. The reply names the `task` handle, the `view`, the `guide`, the editable `submission` file and a `next` step to follow.
+2. Read the `guide` (it holds the researcher instructions, allowed object labels and geometry rule) and open the `view` with the agent's image tool.
+3. Edit the `submission` file into a complete snapshot of all scene labels and objects, then run the `submit` command named in `next`.
 4. Open the returned review `view` and check labels, omissions, boxes, and silhouettes.
-5. If necessary, submit one corrected complete snapshot using the **new task handle**. Report unresolved uncertainty.
-6. Export the image or its source folder as COCO.
+5. Only if necessary, edit the returned `submission` and submit one corrected complete snapshot using the **new task handle**. Report unresolved uncertainty.
+6. Export the image or its source folder as COCO; after the last pass, `next` gives the export command.
 
 Task views have the exact EXIF-oriented source dimensions: **no padding, rulers, grid, or resizing**. The original and reviewed images share one pixel coordinate frame. Thin annotation outlines are added for review; labels stay in JSON.
 
@@ -31,11 +31,13 @@ Run commands with:
 annolabel
 
 Create a task in /absolute/path/to/work/photo-task with --geometry both.
-Open the returned view with your image tool. Use its original pixel dimensions:
-(0,0) is the top-left, x increases right and y increases down.
+Read the returned guide and open the returned view with your image tool. Use
+its original pixel dimensions: (0,0) is the top-left, x increases right and
+y increases down.
 
-Submit classifications and objects as one complete JSON snapshot. Use stable,
-unique object keys. A polygon alone can derive its enclosing bounding box.
+Edit the returned submission file into one complete snapshot of classifications
+and objects, keeping any saved objects' keys, and run the submit command named
+in next. Use stable, unique object keys. A polygon alone can derive its enclosing bounding box.
 Open the returned view once and check missing objects, wrong labels, clipped
 silhouettes, excess background, and coordinate shifts.
 
@@ -60,11 +62,13 @@ annolabel task /data/images/photo.jpg \
   --geometry both
 ```
 
-`--instructions` reads a plain-text file and stores it in the task packet. Give those instructions to the agent as well: the short CLI response does not repeat their contents. Free-form text cannot automatically enforce semantic choices such as which objects are prominent or how an occluded object should be labeled.
+`--instructions` reads a plain-text file and stores it in the task. The task's `guide.txt` repeats the instructions, the allowed object labels (or says that labels are unrestricted), the scene-classification distinction and the geometry rule, so an agent given only the task reply can find them. Free-form text cannot automatically enforce semantic choices such as which objects are prominent or how an occluded object should be labeled.
 
 `--categories` reads a JSON array of allowed **object labels**, for example `["car", "person", "bicycle"]`. Scene classifications are independent. Category membership and geometry constraints are checked on submission.
 
 ## Submission format and coordinates
+
+Each task directory contains `submission.json`, a ready-to-edit complete snapshot in this format, and `schema.json`, its JSON schema. It starts as the saved state at that checkpoint, so an image that already has labels starts with all its objects, keys, geometry, notes and scene labels; change what is wrong and keep the rest. It is a **working copy**: edits there are unsaved until `submit` succeeds, and editing it never changes saved annotations or the task's internal checkpoint. `task-status` reports saved counts and handles; it does not read or reset this file. Do not edit `annotations.json`: it is the task's internal checkpoint.
 
 `submit` accepts a UTF-8 JSON file or stdin with `--file -`. Both top-level arrays are required, even when empty:
 
@@ -109,18 +113,20 @@ An image viewer may scale a large PNG. Always reason in the original dimensions 
 
 ## Review and correct annotations
 
-A successful submission returns a compact receipt resembling:
+A successful submission returns a compact receipt resembling (paths shortened):
 
 ```json
-{"status":"saved","task":"/data/work/photo-task/pass1/task.json","view":"/data/work/photo-task/pass1/view.png","objects":2,"passes_left":1,"changes":{"added":["car1","car2"],"changed":[],"removed":[]}}
+{"status":"saved","task":"/data/work/photo-task/pass1/task.json","view":"/data/work/photo-task/pass1/view.png","objects":2,"passes_left":1,"changes":{"added":["car1","car2"],"changed":[],"removed":[]},"guide":".../pass1/guide.txt","submission":".../pass1/submission.json","next":"Open .../pass1/view.png to review. If a correction is needed, edit .../pass1/submission.json and run annolabel submit .../pass1/task.json --file .../pass1/submission.json; otherwise stop and run annolabel export ... --output NEW_DATASET."}
 ```
 
-Open that `view`, then submit a corrected full snapshot only if needed:
+Open that `view`, then submit a corrected full snapshot only if needed. The new checkpoint's `submission` file already holds what was just saved:
 
 ```sh
 annolabel submit /data/work/photo-task/pass1/task.json \
-  --file /data/work/corrected-labels.json
+  --file /data/work/photo-task/pass1/submission.json
 ```
+
+When `passes_left` is 0, `next` says to stop labeling, report uncertainty and export.
 
 Use the returned handle, rather than guessing paths. A second submission returns `passes_left: 0`. By default each task allows two successful submissions. Use `--max-passes 1` when creating a task to permit only one. Invalid submissions do not consume a pass.
 
@@ -135,11 +141,13 @@ annolabel submit /data/work/photo-task/pass1/task.json \
 
 An empty first submission is allowed when the handle's snapshot has no objects. A task started on an already annotated image still protects those saved objects, even on its first submission. The flag does not bypass validation, revision checks, or the pass limit. Identical retries replay their saved receipt even if `--allow-empty` is omitted on the retry.
 
-If a command response is lost, recover the latest committed handle and view:
+If a command response is lost, recover the latest committed handle, view, guide, working copy and next step:
 
 ```sh
 annolabel task-status /data/work/photo-task/task.json
 ```
+
+Task directories created before working copies existed have no `submission.json`; their replies omit `guide`, `submission` and `next`, and they remain readable and submittable as before. Old files are never rewritten. To get the new files for such a checkpoint, start a fresh task on the current source with the rules you want (`annolabel task IMAGE --output NEW_DIR ...`); it starts from the saved labels with a fresh pass budget.
 
 An identical retry against the same checkpoint replays its saved receipt while its saved revision remains current. A different payload against a consumed checkpoint requires the next handle. If another writer has changed the source or labels, stop and reconcile the change before creating a new task.
 
@@ -203,7 +211,7 @@ annolabel task /data/images --output /data/work/image-tasks
 annolabel task-status /data/work/image-tasks/tasks.json
 ```
 
-1. Open the view named by `next`, and submit a complete snapshot using `next_task`, the per-image handle. For example: `annolabel submit /data/work/image-tasks/000001/task.json --file /data/work/image-a-labels.json`.
+1. Follow `next`: it names the pending image's guide, view and working copy and the exact `submit` command for its per-image handle (`next_task`). For example: `annolabel submit /data/work/image-tasks/000001/task.json --file /data/work/image-tasks/000001/submission.json`. `annolabel task-status` on that per-image handle returns the same context.
 2. Open the saved view and, if needed, correct it using the new handle returned by `submit`. Each image retains the usual pass limit, replay behavior and removal guards.
 3. Run `task-status` on the folder index whenever you need progress or lose a reply. It follows each image's checkpoint chain, including corrections, and names the next pending handle.
 4. When all images are saved, status returns the export command: `annolabel export /data/images --output NEW_DATASET`. Replace `NEW_DATASET` with a new output directory.

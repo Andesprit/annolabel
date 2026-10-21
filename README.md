@@ -70,7 +70,7 @@ annolabel submit task/task.json --file shapes-submission.json
 annolabel export shapes.png --output dataset
 ```
 
-Open `task/pass1/view.png` to review the result. The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
+Here the example file stands in for the agent's work. In real use, read the returned `guide`, open the `view`, edit the returned `submission` file (it already holds any saved labels) and run the `submit` command named in `next`. Open `task/pass1/view.png` to review the result. The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
 
 For a folder, start once and check progress:
 
@@ -79,7 +79,7 @@ annolabel task /data/images --output /data/work/image-tasks
 annolabel task-status /data/work/image-tasks/tasks.json
 ```
 
-Open each returned view and submit its per-image `task.json`; status names the next handle and, when all images are saved, the exact export command. Keep loose previews and masks outside the source folder. See the [folder workflow](docs/usage.md#label-folders-and-batch-agent-work).
+Follow `next`: it names the pending image's guide, view, editable `submission` file and exact `submit` command. Status names the next handle and, when all images are saved, the exact export command. Keep loose previews and masks outside the source folder. See the [folder workflow](docs/usage.md#label-folders-and-batch-agent-work).
 
 ## Learn more
 
