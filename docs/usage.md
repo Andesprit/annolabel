@@ -237,7 +237,7 @@ annolabel task-retry /data/work/image-tasks/tasks.json
 
 Folder start discovers files recursively by extension: `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tif`, `.tiff` and `.gif`, case-insensitively. Multi-frame images remain unsupported. Sources are sorted by resolved path and symlink aliases are deduplicated. Task directories are numbered `000001`, `000002`, and so on; the index maps each number to its source, so nested files and equal stems cannot collide. The index fixes the image list at creation.
 
-The new output directory and existing AnnoLabel bundles marked by `packet.json`, `tasks.json` or `annotations/instances_default.json` are excluded from discovery. **Keep unmarked loose previews and masks outside the source folder**: they look like source images. Folder export uses annotation sidecars, rather than image extensions, and includes only images with saved sidecars. An empty folder or one containing no supported source images returns `NO_IMAGES` with recovery instructions.
+The new output directory and existing AnnoLabel bundles marked by `packet.json`, `tasks.json`, `audit.json` or `annotations/instances_default.json` are excluded from discovery. **Keep unmarked loose previews and masks outside the source folder**: they look like source images. Folder export uses annotation sidecars, rather than image extensions, and includes only images with saved sidecars. An empty folder or one containing no supported source images returns `NO_IMAGES` with recovery instructions.
 
 An agent may group two independent submissions into one shell call:
 
@@ -247,6 +247,22 @@ annolabel submit /data/work/image-tasks/000002/task.json --file /data/work/image
 ```
 
 These are separate image operations, not one atomic multi-image transaction. Check each command's result: the final shell exit status alone does not establish that both succeeded. Keep **one writer per source image**; concurrent agents can work on different images. Avoid stitching images unless your calling system also handles the coordinate mapping back to each source. AnnoLabel does not implement LLM batching or image-stitching inference.
+
+## Check a folder before export (optional)
+
+```sh
+annolabel audit /data/images --output /data/work/audit-1
+```
+
+`audit` is a read-only look at the whole source folder. It does not write sidecars, create tasks, spend passes or change what export includes. The reply gives `status` (`attention` when any image is unannotated, unreadable or has a bad sidecar), `totals`, `object_labels`, `scene_classes`, every `issue` with its recovery step, and the paths of `audit.json` and the overview pages. Open every page.
+
+- **Every eligible source is listed once** (same discovery as `task FOLDER`). Its status is `saved`, `unannotated` or `error`. Error codes are `IMAGE_UNREADABLE`, `SIDECAR_INVALID` (the sidecar cannot be read) and `SIDECAR_STALE` (the image changed after labeling). Saved images with zero objects are shown as `SAVED, 0 objects`; that does not say whether the image is really empty.
+- **Orphan sidecars** (`ORPHAN_SIDECAR`): a `.labels.json` whose image is missing or is not a supported source image. Folder export fails while one is present; the page header says when there are any.
+- **Labels are counted literally.** `Rectangle` and `rectangle` stay separate; nothing is merged. A linked box and polygon count as one object. Scene classes are counted apart from object labels. Notes and IDs are kept per object in `audit.json`.
+- **Pages** hold up to 12 sources (4 x 3 tiles, at most 1320 x 1071 pixels) and are written one at a time. Each tile shows a thumbnail, numbered object outlines with a `number=label` key, the status and the scene classes. When a caption is too long it points to `audit.json source #N`; `?` marks a character the page font cannot draw. Thumbnails help you notice mistakes; do not measure coordinates on them.
+- **Actions** in `audit.json` are exact commands with quoted paths: `review` (detailed single-image review), `label` for an unannotated image and `correct` for a saved one. Both run `task`; `correct` starts a NEW task with fresh passes from the saved labels and does not resume an earlier handle. Replace `NEW_..._DIR` with a directory that does not exist.
+
+The report describes the folder when it ran. `saved` does not mean reviewed, correct or ready for training. After fixing something, audit again to a new `--output`. Audit outputs are marked by `audit.json` and are never counted as source images, even inside the source folder. For one image, use `annolabel review IMAGE --output NEW_DIR` instead.
 
 ## Export COCO for training
 
@@ -388,4 +404,5 @@ Run `annolabel COMMAND --help` for full arguments.
 | `prepare IMAGE --output DIR` | Prepare full metadata, editable snapshot, and detailed views. |
 | `apply IMAGE --file JSON --packet PACKET --output DIR` | Apply a complete revision-aware snapshot and render detailed reviews. |
 | `review IMAGE --output DIR` | Render detailed review pages or custom regions. |
+| `audit FOLDER --output DIR` | Read-only folder check: per-source status, label counts, issues and overview pages. |
 | `export IMAGE_OR_FOLDER --output DIR` | Export a COCO dataset. |
