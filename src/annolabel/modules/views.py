@@ -359,3 +359,87 @@ def write_bundle(
         "object_count": len(objects),
         "coordinates": "Original EXIF-oriented pixels by default. Read printed ruler values, not scaled viewer coordinates.",
     }
+
+
+def _dashed(draw: ImageDraw.ImageDraw, points: list) -> None:
+    """Closed dashed white line on a solid black under-stroke, readable on any pixels."""
+    path = points + points[:1]
+    draw.line(path, fill="black", width=5, joint="curve")
+    for (x1, y1), (x2, y2) in zip(path, path[1:]):
+        length = max(math.hypot(x2 - x1, y2 - y1), 1)
+        for start in range(0, math.ceil(length), 14):
+            a, b = start / length, min(start + 8, length) / length
+            draw.line(
+                (x1 + (x2 - x1) * a, y1 + (y2 - y1) * a, x1 + (x2 - x1) * b, y1 + (y2 - y1) * b),
+                fill="white",
+                width=3,
+            )
+
+
+def _removals(image: Image.Image, candidate: Document, removed: Document) -> Image.Image:
+    """Candidate outlines plus dashed removed saved geometry, with a legend strip below."""
+    view = _outlined(image, candidate)
+    draw = ImageDraw.Draw(view)
+    labelled = set()
+    for a in removed.annotations:
+        if a.kind == "box":
+            (x1, y1), (x2, y2) = a.points
+            corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+        elif a.kind == "polygon":
+            corners = [tuple(point) for point in a.points]
+        else:
+            continue
+        _dashed(draw, corners)
+        if a.object_id not in labelled:
+            labelled.add(a.object_id)
+            x, y = min(p[0] for p in corners), min(p[1] for p in corners)
+            text = f"REMOVED: {a.object_id}"
+            box = draw.textbbox((x + 3, y + 3), text, font=_font(13))
+            draw.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), fill="black")
+            draw.text((x + 3, y + 3), text, font=_font(13), fill="white")
+    legend = textwrap.wrap(
+        "DIAGNOSTIC ONLY: dashed white outlines are saved objects this candidate REMOVES; "
+        "they will not be kept. Solid outlines are the candidate.",
+        max(30, image.width // 8),
+    )
+    page = Image.new("RGB", (image.width, image.height + 10 + 18 * len(legend)), "#101827")
+    page.paste(view, (0, 0))
+    draw = ImageDraw.Draw(page)
+    for line_no, line in enumerate(legend):
+        draw.text((6, image.height + 5 + 18 * line_no), line, font=_font(13), fill="white")
+    return page
+
+
+def write_preview(
+    image: Image.Image,
+    candidate: Document,
+    removed: Document | None,
+    output: Path,
+    texts: dict[str, str],
+) -> None:
+    """Publish a read-only candidate preview: view.png, optional changes.png and texts."""
+    if output.exists() or output.is_symlink():
+        raise InputError(
+            "OUTPUT_EXISTS",
+            f"Output directory already exists: {str(output)!r}.",
+            "Pass a new directory with --output; the existing directory was not replaced.",
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".annolabel-preview-", dir=output.parent))
+    try:
+        _outlined(image, candidate).save(temporary / "view.png")
+        if removed is not None:
+            _removals(image, candidate, removed).save(temporary / "changes.png")
+        for name, text in texts.items():
+            (temporary / name).write_text(text)
+            (temporary / name).chmod(0o444)
+        if output.exists() or output.is_symlink():
+            raise InputError(
+                "OUTPUT_EXISTS",
+                f"Output directory appeared while writing: {str(output)!r}.",
+                "Pass a new directory with --output; the existing directory was not replaced.",
+            )
+        os.rename(temporary, output)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)

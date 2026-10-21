@@ -11,7 +11,13 @@ from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.audit import audit_folder
 from annolabel.core.export import export_dataset
 from annolabel.core.inputs import parse_json, read_text
-from annolabel.core.task import retry_tasks, start_task, submit_task, task_status
+from annolabel.core.task import (
+    preview_task,
+    retry_tasks,
+    start_task,
+    submit_task,
+    task_status,
+)
 from annolabel.core.workflow import Workflow
 from annolabel.modules.validation import InputError, validation_details
 
@@ -56,6 +62,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     submit.add_argument(
         "--allow-empty", action="store_true", help="Allow a snapshot to remove all saved objects"
+    )
+    preview = commands.add_parser(
+        "preview",
+        help="Optional: render an unsaved candidate and its changes before submit; uses no pass",
+    )
+    preview.add_argument("task", help="Per-image task.json to compare against")
+    preview.add_argument(
+        "--file", required=True, help="Complete candidate snapshot (submit format), or - for stdin"
+    )
+    preview.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        help="New directory outside task and other AnnoLabel output",
+    )
+    preview.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Allow a candidate that removes all saved objects",
     )
     status = commands.add_parser(
         "task-status", help="Recover an image task or report progress from a folder tasks.json"
@@ -192,6 +217,7 @@ def _recovery(args: argparse.Namespace) -> str:
     return {
         "task": "Correct the named task input and retry annolabel task with a new --output directory.",
         "submit": 'Correct all listed fields in --file and retry the same task handle with a complete snapshot; use "classifications": [] when there are none.',
+        "preview": 'Correct all listed fields in --file and preview again to a new --output directory; use "classifications": [] when there are none. Nothing was saved.',
         "task-retry": "Pass the folder tasks.json returned by annolabel task FOLDER --keep-going; fix the named source first.",
         "task-status": "Pass the task.json returned by annolabel task, submit, or task-status; restore any missing checkpoint files.",
         "prepare": "Correct the named input or rule and retry annolabel prepare with a new --output directory.",
@@ -254,7 +280,7 @@ def main() -> None:
     args = None
     try:
         args = _parser().parse_args()
-        if args.command in {"task", "submit", "task-status", "task-retry"}:
+        if args.command in {"task", "submit", "preview", "task-status", "task-retry"}:
             if args.command == "task":
                 result = start_task(
                     args.image,
@@ -268,6 +294,9 @@ def main() -> None:
             elif args.command == "submit":
                 payload = _payload(args)
                 result = submit_task(args.task, payload, allow_empty=args.allow_empty)
+            elif args.command == "preview":
+                payload = _payload(args)
+                result = preview_task(args.task, payload, args.output, allow_empty=args.allow_empty)
             elif args.command == "task-retry":
                 result = retry_tasks(args.task)
             else:

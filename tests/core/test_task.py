@@ -1,6 +1,8 @@
 """Real CLI checks for the short task protocol and safe recovery."""
 
 import json
+import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from PIL import Image, ImageOps
 
 from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.task import Task, TaskError, start_task
+from annolabel.modules.discovery import discover_images
 from tests.helpers import cli, save
 
 CONTEXT = {"guide", "submission", "next"}
@@ -837,3 +840,196 @@ def test_retry_interrupted_after_publication_keeps_its_history(
     retry = task_module.retry_tasks(initial["index"])
     assert retry["retried"] == [] and not slot.exists()
     assert retry["tasks"][1]["code"] == "TASK_MISSING"
+
+
+def _tree(root: Path) -> dict:
+    return {str(p): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+
+def _run(command: str) -> dict:
+    """Run a returned 'annolabel ...' command through the real CLI."""
+    words = shlex.split(command)
+    assert words[0] == "annolabel"
+    return cli(*words[1:])
+
+
+def _two_saved_objects(source: Path, tmp_path: Path) -> dict:
+    """Save a box and a polygon-only object, leaving one correction pass."""
+    initial = cli("task", source, "-o", tmp_path / "task")
+    payload = {
+        "classifications": [{"label": "shapes", "note": "keep me"}],
+        "objects": [
+            {"key": "rect", "label": "rectangle", "polygon": [[5, 5], [40, 5], [40, 40], [5, 40]]},
+            {"key": "tri", "label": "triangle", "polygon": [[50, 10], [90, 10], [70, 60]]},
+        ],
+    }
+    return cli("submit", initial["task"], "--file", save(tmp_path / "first.json", payload))
+
+
+def test_preview_final_pass_is_read_only_and_offered_submit_saves_it(
+    source: Path, tmp_path: Path
+) -> None:
+    saved = _two_saved_objects(source, tmp_path)
+    assert saved["passes_left"] == 1
+    working = json.loads(Path(saved["submission"]).read_text())
+    working["objects"] = [o for o in working["objects"] if o["key"] == "tri"]
+    working["objects"][0]["polygon"] = [[52, 12], [88, 12], [70, 58]]
+    working["objects"][0].pop("box")
+    candidate = save(tmp_path / "candidate.json", working)
+    before, status = _tree(tmp_path / "task"), cli("task-status", saved["task"])
+    sidecar = Path(str(source) + ".labels.json").read_bytes()
+    first = cli("preview", saved["task"], "--file", candidate, "-o", tmp_path / "previews/one")
+    assert first["status"] == "unsaved" and first["passes_left"] == 1
+    assert first["changes"] == {"added": [], "changed": ["tri"], "removed": ["rect"]}
+    assert "rect" in first["warnings"][0]
+    assert first["saved_view"] == saved["view"] and first["task"] == saved["task"]
+    # Repeated previews (stdin, spaces in the path) never save, use a pass or create a handle.
+    working["objects"][0]["polygon"] = [[54, 12], [86, 12], [70, 56]]
+    second = cli(
+        "preview",
+        saved["task"],
+        "--file",
+        "-",
+        "-o",
+        tmp_path / "previews/two with space",
+        stdin=json.dumps(working),
+    )
+    assert _tree(tmp_path / "task") == before
+    assert cli("task-status", saved["task"]) == status
+    assert Path(str(source) + ".labels.json").read_bytes() == sidecar
+    assert not (Path(saved["task"]).parent / "pass2").exists()
+    bundle = Path(second["candidate"]).parent
+    assert sorted(p.name for p in bundle.iterdir()) == [
+        "candidate.json",
+        "changes.png",
+        "guide.txt",
+        "preview.json",
+        "view.png",
+    ]
+    assert json.loads((bundle / "preview.json").read_text()) == second
+    assert not os.access(second["candidate"], os.W_OK)
+    for key in ["view", "changes_view", "saved_view", "candidate", "guide", "task"]:
+        assert Path(second[key]).exists()
+    guide = Path(second["guide"]).read_text()
+    assert "UNSAVED" in guide and "DIAGNOSTIC ONLY" in guide and second["submit"] in guide
+    with Image.open(second["changes_view"]) as changes, Image.open(second["view"]) as view:
+        assert view.size == (100, 80) and changes.width == 100 and changes.height > 80
+        assert changes.crop((0, 0, 100, 80)).tobytes() != view.tobytes()
+    assert second["submit"] == (
+        f"annolabel submit {shlex.quote(saved['task'])} --file {shlex.quote(second['candidate'])}"
+    )
+    final = _run(second["submit"])
+    assert final["changes"] == second["changes"] and final["passes_left"] == 0
+    assert Path(final["view"]).read_bytes() == Path(second["view"]).read_bytes()
+    stored = json.loads(Path(final["submission"]).read_text())
+    assert stored == json.loads(Path(second["candidate"]).read_text())
+    assert stored["classifications"] == [{"label": "shapes", "note": "keep me"}]
+    assert stored["objects"][0]["box"] == [54, 12, 86, 56]  # derived from the polygon
+    # The used checkpoint and the terminal handle refuse previews, even of the same payload.
+    used = cli("preview", saved["task"], "--file", candidate, "-o", tmp_path / "u", success=False)
+    assert used["code"] == "CHECKPOINT_USED" and "task-status" in used["recovery"]
+    done = cli("preview", final["task"], "--file", candidate, "-o", tmp_path / "d", success=False)
+    assert done["code"] == "PASS_LIMIT"
+    assert not (tmp_path / "u").exists() and not (tmp_path / "d").exists()
+
+
+def test_preview_refusals_leave_everything_unchanged(source: Path, tmp_path: Path) -> None:
+    saved = _two_saved_objects(source, tmp_path)
+    task = Path(saved["task"])
+    good = save(tmp_path / "good.json", json.loads(Path(saved["submission"]).read_text()))
+    empty = save(tmp_path / "empty.json", {"classifications": [], "objects": []})
+    bad = save(
+        tmp_path / "bad.json",
+        {"classifications": [], "objects": [{"key": "a", "label": "x", "polygon": [[1, 1]]}]},
+    )
+    (tmp_path / "alias").symlink_to(task.parent)
+    (tmp_path / "taken").mkdir()
+    before = _tree(tmp_path)
+    cases = [
+        (bad, tmp_path / "p", "VALIDATION_ERROR"),
+        (empty, tmp_path / "p", "OBJECTS_REMOVED"),
+        (good, task.parent / "pass2", "OUTPUT_RESERVED"),
+        (good, task.parent / "pass2/nested", "OUTPUT_RESERVED"),
+        (good, tmp_path / "alias/pass2/nested", "OUTPUT_RESERVED"),
+        (good, tmp_path / "task/elsewhere", "OUTPUT_RESERVED"),
+        (good, tmp_path / "taken", "OUTPUT_EXISTS"),
+    ]
+    for payload, output, code in cases:
+        error = cli("preview", task, "--file", payload, "-o", output, success=False)
+        assert error["code"] == code and error["recovery"], (output, error)
+        assert _tree(tmp_path) == before
+        assert not (task.parent / "pass2").exists() and not (tmp_path / "p").exists()
+    assert (
+        "preview"
+        in cli("preview", task, "--file", empty, "-o", tmp_path / "p", success=False)["recovery"]
+    )
+    removal = cli("preview", task, "--file", empty, "-o", tmp_path / "p", "--allow-empty")
+    assert removal["submit"].endswith(" --allow-empty") and removal["objects"] == 0
+    assert removal["changes"]["removed"] == ["rect", "tri"]
+    inside = cli("preview", task, "--file", good, "-o", tmp_path / "p/again", success=False)
+    assert inside["code"] == "OUTPUT_RESERVED"
+    # A source change after a successful preview still stops the offered submit and later previews.
+    ok = cli("preview", task, "--file", good, "-o", tmp_path / "ok")
+    cli("label", source, "--label", "external edit")
+    assert cli(*shlex.split(ok["submit"])[1:], success=False)["code"] == "TASK_CONFLICT"
+    stale = cli("preview", task, "--file", good, "-o", tmp_path / "stale", success=False)
+    assert stale["code"] == "TASK_CONFLICT" and not (tmp_path / "stale").exists()
+
+
+def test_preview_unchanged_exif_candidate_has_no_diagnostic(tmp_path: Path) -> None:
+    source = tmp_path / "rotated.jpg"
+    image = Image.new("RGB", (100, 60), "white")
+    exif = Image.Exif()
+    exif[274] = 6
+    image.save(source, exif=exif)
+    initial = cli("task", source, "-o", tmp_path / "task")
+    payload = {
+        "classifications": [],
+        "objects": [{"key": "p", "label": "part", "polygon": [[5, 5], [55, 5], [30, 95]]}],
+    }
+    saved = cli("submit", initial["task"], "--file", save(tmp_path / "a.json", payload))
+    payload["objects"][0]["view_id"] = "view"  # identity coordinates on the source-sized view
+    reply = cli(
+        "preview", saved["task"], "--file", save(tmp_path / "b.json", payload), "-o", tmp_path / "p"
+    )
+    assert reply["changes"] == {"added": [], "changed": [], "removed": []}
+    assert reply["changes_view"] is None and "warnings" not in reply
+    assert not (tmp_path / "p/changes.png").exists()
+    with Image.open(reply["view"]) as view:
+        assert view.size == (60, 100)
+    assert Path(reply["view"]).read_bytes() == Path(saved["view"]).read_bytes()
+    assert json.loads(Path(reply["candidate"]).read_text()) == json.loads(
+        Path(saved["submission"]).read_text()
+    )
+
+
+def test_preview_keeps_folder_progress_audit_and_discovery_on_saved_state(
+    tmp_path: Path,
+) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
+    for name in ["a.png", "b.png"]:
+        Image.new("RGB", (40, 30), "white").save(images / name)
+    folder = cli("task", images, "-o", tmp_path / "tasks")
+    one = folder["tasks"][0]["task"]
+    payload = save(tmp_path / "s.json", submission() | {"objects": []})
+    saved = cli("submit", one, "--file", payload)
+    status = cli("task-status", folder["index"])
+    audit = cli("audit", images, "-o", tmp_path / "audit1")
+    redirect = cli(
+        "preview", folder["index"], "--file", payload, "-o", tmp_path / "x", success=False
+    )
+    assert redirect["code"] == "IMAGE_TASK_REQUIRED" and "task-status" in redirect["recovery"]
+    box = {
+        "classifications": [],
+        "objects": [{"key": "b", "label": "x", "polygon": [[1, 1], [9, 1], [9, 9]]}],
+    }
+    cli("preview", saved["task"], "--file", save(tmp_path / "b.json", box), "-o", images / "pv")
+    assert cli("task-status", folder["index"]) == status
+    after = cli("audit", images, "-o", tmp_path / "audit2")
+    assert {k: after[k] for k in ["totals", "object_labels", "scene_classes"]} == {
+        k: audit[k] for k in ["totals", "object_labels", "scene_classes"]
+    }
+    assert discover_images(images, tmp_path / "none") == sorted(
+        p.resolve() for p in images.glob("*.png")
+    )

@@ -11,8 +11,10 @@ from pydantic import ValidationError
 from annolabel.core.inputs import parse_json, read_model, read_rules, read_text
 from annolabel.core.workflow import Workflow
 from annolabel.modules.batch import batch_document, parse_snapshot, revision, snapshot
-from annolabel.modules.discovery import IMAGE_SUFFIXES, discover_images
+from annolabel.modules.discovery import GENERATED_MARKERS, IMAGE_SUFFIXES, discover_images
 from annolabel.modules.validation import InputError, validation_details
+from annolabel.modules.views import write_preview
+from annolabel.schemas.annotations import Document
 from annolabel.schemas.task import (
     FolderStartFailure,
     FolderTaskEntry,
@@ -308,6 +310,38 @@ def submit_task(path: str, payload: str, *, allow_empty: bool = False) -> dict:
     return Task(path).submit(payload, allow_empty=allow_empty)
 
 
+def preview_task(path: str, payload: str, output: str, *, allow_empty: bool = False) -> dict:
+    """Validate and render an unsaved candidate for one image task; never saves or uses a pass."""
+    index = _folder_index(path)
+    if index is not None:
+        status = _folder_status(path, index)
+        raise TaskError(
+            "IMAGE_TASK_REQUIRED",
+            f"{path!r} is a folder task index; preview accepts one image task.json at a time.",
+            f"Run annolabel task-status {quote(path)} and preview a per-image task handle. "
+            + status["next"],
+        )
+    return Task(path).preview(payload, output, allow_empty=allow_empty)
+
+
+# Directories holding any of these are AnnoLabel output; a preview may not be written inside one.
+RESERVED_MARKERS = GENERATED_MARKERS | {"task.json", "receipt.json"}
+
+
+def _preview_output(output: str) -> Path:
+    """Refuse outputs at or below generated bundles, so a preview never occupies a pass path."""
+    path = Path(output).expanduser().absolute()
+    for parent in [path.resolve(), *path.resolve().parents]:
+        if any((parent / marker).exists() for marker in RESERVED_MARKERS):
+            raise TaskError(
+                "OUTPUT_RESERVED",
+                f"Preview output {str(path)!r} is inside AnnoLabel output {str(parent)!r}.",
+                "Pass a new --output outside task, pass, folder-task, audit and preview "
+                "directories. Nothing was written.",
+            )
+    return path
+
+
 def _folder_status(path: str, index: FolderTaskIndex) -> dict:
     entries, pending = [], None
     for entry in index.tasks:
@@ -424,6 +458,11 @@ def _folder_status(path: str, index: FolderTaskIndex) -> dict:
     }
 
 
+def _removed_warning(changes: dict) -> str:
+    removed = json.dumps(changes["removed"], ensure_ascii=False)
+    return f"Removed saved objects: {removed}. Omitted objects are deleted."
+
+
 class Task:
     """Read or submit a task checkpoint; serialize writers for each source image."""
 
@@ -477,28 +516,19 @@ class Task:
             self.handle.image,
         )
 
-    def submit(self, payload: str, *, allow_empty: bool = False) -> dict:
-        """Validate and save all annotations; an identical retry replays its receipt."""
+    def _parse(self, payload: str) -> Submission:
         try:
-            submission = Submission.model_validate_json(payload)
+            return Submission.model_validate_json(payload)
         except ValidationError:
-            submission = parse_snapshot(
+            return parse_snapshot(
                 payload,
                 self.workflow.document,
                 self.workflow._packet(self.handle.packet),
                 short=True,
             )
-        digest = hashlib.sha256(submission.model_dump_json().encode()).hexdigest()
-        if self.next_dir.exists():
-            receipt = json.loads((self.next_dir / "receipt.json").read_text())
-            if receipt["submission_sha256"] != digest:
-                raise TaskError(
-                    "CHECKPOINT_USED",
-                    "This checkpoint already saved a different submission.",
-                    f"Run annolabel task-status {quote(str(self.path))} and use the returned task for a correction.",
-                )
-            self._check_current(receipt["saved_revision"])
-            return _context(receipt["result"], self.handle.image)
+
+    def _check_open(self) -> None:
+        """Refuse a terminal handle or changed source; both submit and preview need a fresh pass."""
         if self.handle.pass_count >= self.handle.max_passes:
             raise TaskError(
                 "PASS_LIMIT",
@@ -506,6 +536,11 @@ class Task:
                 "Stop labeling and report any remaining uncertainty. Export is still available.",
             )
         self._check_current(self.snapshot.base_revision)
+
+    def _candidate(
+        self, submission: Submission, command: str, allow_empty: bool
+    ) -> tuple[Batch, Document, dict]:
+        """Validate a complete snapshot against this checkpoint and list its object changes."""
         batch = Batch(
             image_sha256=self.snapshot.image_sha256,
             base_revision=self.snapshot.base_revision,
@@ -524,13 +559,32 @@ class Task:
         }
         removed = json.dumps(changes["removed"], ensure_ascii=False)
         if previous and not current and not allow_empty:
+            extra = " --output NEW_DIR" if command == "preview" else ""
             raise TaskError(
                 "OBJECTS_REMOVED",
                 f"This snapshot would remove every saved object: {removed}.",
-                f"Keep the objects {removed} in the complete snapshot, or rerun annolabel submit "
-                f"{quote(str(self.path))} --file ANNOTATIONS_JSON --allow-empty to remove them "
-                "intentionally. Nothing was saved and no pass was used.",
+                f"Keep the objects {removed} in the complete snapshot, or rerun annolabel {command} "
+                f"{quote(str(self.path))} --file ANNOTATIONS_JSON{extra} --allow-empty to remove "
+                "them intentionally. Nothing was saved and no pass was used.",
             )
+        return batch, document, changes
+
+    def submit(self, payload: str, *, allow_empty: bool = False) -> dict:
+        """Validate and save all annotations; an identical retry replays its receipt."""
+        submission = self._parse(payload)
+        digest = hashlib.sha256(submission.model_dump_json().encode()).hexdigest()
+        if self.next_dir.exists():
+            receipt = json.loads((self.next_dir / "receipt.json").read_text())
+            if receipt["submission_sha256"] != digest:
+                raise TaskError(
+                    "CHECKPOINT_USED",
+                    "This checkpoint already saved a different submission.",
+                    f"Run annolabel task-status {quote(str(self.path))} and use the returned task for a correction.",
+                )
+            self._check_current(receipt["saved_revision"])
+            return _context(receipt["result"], self.handle.image)
+        self._check_open()
+        batch, document, changes = self._candidate(submission, "submit", allow_empty)
         next_handle = TaskHandle(
             image=self.handle.image,
             snapshot=str(self.next_dir / "annotations.json"),
@@ -547,7 +601,7 @@ class Task:
             "changes": changes,
         }
         if changes["removed"]:
-            result["warnings"] = [f"Removed saved objects: {removed}. Omitted objects are deleted."]
+            result["warnings"] = [_removed_warning(changes)]
         receipt = {
             "submission_sha256": digest,
             "saved_revision": revision(document),
@@ -561,3 +615,94 @@ class Task:
             extra_files={"task.json": next_handle.model_dump(), "receipt.json": receipt},
         )
         return _context(result, self.handle.image)
+
+    def preview(self, payload: str, output: str, *, allow_empty: bool = False) -> dict:
+        """Render a candidate snapshot and its changes without saving or using a pass."""
+        submission = self._parse(payload)
+        if self.next_dir.exists():
+            raise TaskError(
+                "CHECKPOINT_USED",
+                "This checkpoint already saved a submission; previews need the latest task handle.",
+                f"Run annolabel task-status {quote(str(self.path))} for the latest task handle and "
+                "its passes left; preview that handle if a pass remains.",
+            )
+        self._check_open()
+        destination = _preview_output(output)
+        _, document, changes = self._candidate(submission, "preview", allow_empty)
+        candidate = {key: snapshot(document)[key] for key in ("classifications", "objects")}
+        text = json.dumps(candidate, indent=2) + "\n"
+        removed = None
+        if changes["removed"]:
+            removed = Document(
+                image=document.image,
+                annotations=[
+                    a
+                    for a in self.workflow.document.annotations
+                    if a.object_id in changes["removed"]
+                ],
+            )
+        working = self.path.parent / "submission.json"
+        # Legacy bundles have no working copy; never point at a file that does not exist.
+        edit = quote(str(working)) if working.is_file() else "ANNOTATIONS_JSON"
+        submit = (
+            f"annolabel submit {quote(str(self.path))} --file "
+            f"{quote(str(destination / 'candidate.json'))}"
+            + (" --allow-empty" if changes["removed"] and not candidate["objects"] else "")
+        )
+        result = {
+            "status": "unsaved",
+            "task": str(self.path),
+            "view": str(destination / "view.png"),
+            "changes_view": str(destination / "changes.png") if removed else None,
+            "saved_view": str(self.path.parent / "view.png"),
+            "candidate": str(destination / "candidate.json"),
+            "candidate_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "objects": len(candidate["objects"]),
+            "passes_left": self.handle.max_passes - self.handle.pass_count,
+            "changes": changes,
+        }
+        if changes["removed"]:
+            result["warnings"] = [_removed_warning(changes)]
+        result["guide"] = str(destination / "guide.txt")
+        result["submit"] = submit
+        result["next"] = (
+            "Nothing was saved and no pass was used. Open "
+            + quote(result["view"])
+            + (f" and {quote(result['changes_view'])}" if removed else "")
+            + f", and compare with the saved view {quote(result['saved_view'])}. To save exactly "
+            f"this candidate, run {submit}. To change it, edit {edit} and run "
+            f"annolabel preview {quote(str(self.path))} --file {edit} --output "
+            "NEW_PREVIEW_DIR."
+        )
+        guide = (
+            "AnnoLabel candidate preview: UNSAVED. No annotations were written and no pass was used.\n"
+            "This folder is not a task: it has no task handle and no revision. Submit only with the\n"
+            "task handle named below.\n"
+            f"\nview.png: the candidate outlines on the {document.image.width} x {document.image.height} "
+            "EXIF-oriented source pixels,\nas the saved view would show them after submit.\n"
+            + (
+                "changes.png: DIAGNOSTIC ONLY. Dashed white outlines labelled REMOVED are saved objects\n"
+                "this candidate deletes; they will not be kept. Solid outlines are the candidate.\n"
+                if removed
+                else "No saved object is removed, so there is no changes.png.\n"
+            )
+            + "candidate.json: the complete validated snapshot shown here, in original pixels (read-only).\n"
+            f"\nSaved state: {result['saved_view']} ({result['passes_left']} pass(es) left).\n"
+            f"Changes: {json.dumps(changes, ensure_ascii=False)}\n"
+            f"\nTo save this candidate: {submit}\n"
+            "Submit validates again against the current source image and labels, and refuses if they\n"
+            "changed after this preview.\n"
+            f"To change it: edit {edit}, then preview again to a NEW --output directory.\n"
+        )
+        write_preview(
+            self.workflow.image,
+            document,
+            removed,
+            destination,
+            {
+                "candidate.json": text,
+                "preview.json": json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                "guide.txt": guide,
+            },
+        )
+        return result

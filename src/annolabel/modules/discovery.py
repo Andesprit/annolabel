@@ -6,8 +6,8 @@ from pathlib import Path
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 SIDECAR_SUFFIX = ".labels.json"
-# Files that mark a directory as AnnoLabel output: task bundles, folder tasks and audits.
-GENERATED_MARKERS = {"packet.json", "tasks.json", "audit.json"}
+# Files that mark a directory as AnnoLabel output: task bundles, folder tasks, audits and previews.
+GENERATED_MARKERS = {"packet.json", "tasks.json", "audit.json", "preview.json"}
 
 
 def _walk(source: Path, output: Path) -> Iterator[tuple[Path, list[str]]]:
