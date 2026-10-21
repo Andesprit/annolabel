@@ -114,6 +114,8 @@ def test_existing_output_names_path_and_keeps_contents(
 ) -> None:
     from annolabel.main import main
 
+    if command == "export":
+        cli("label", source, "--label", "scene")
     output = tmp_path / ("existing.png" if command == "render" else "existing")
     output.write_bytes(b"keep this existing file")
     monkeypatch.setattr(sys, "argv", ["annolabel", command, str(source), "--output", str(output)])

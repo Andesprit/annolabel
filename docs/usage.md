@@ -210,7 +210,7 @@ These are separate image operations, not one atomic multi-image transaction. Che
 annolabel export /data/images --output /data/datasets/labeled
 ```
 
-COCO is currently the only built-in training format; `--format coco` is optional. Folder export discovers `*.labels.json` recursively and excludes images without sidecars. A direct image export may contain zero annotations.
+COCO is currently the only built-in training format; `--format coco` is optional. Folder export discovers `*.labels.json` recursively and excludes images without sidecars. Exporting a single image without a sidecar fails with `NO_ANNOTATIONS`: run `task` and `submit` first. An existing sidecar with zero objects still exports, including any whole-image classifications; the JSON receipt includes a `warnings` entry naming each zero-object image. For an intentionally empty image, submit a snapshot with `"objects": []` before exporting.
 
 ```text
 labeled/
