@@ -142,3 +142,38 @@ def test_one_pass_task_and_duplicate_object_keys(source: Path, tmp_path: Path) -
     result = cli("submit", initial["task"], "--file", payload)
     assert result["passes_left"] == 0
     assert cli("submit", result["task"], "--file", payload, success=False)["code"] == "PASS_LIMIT"
+
+
+def test_submission_reports_each_invalid_object_before_saving(source: Path, tmp_path: Path) -> None:
+    categories = save(tmp_path / "categories.json", ["rectangle", "triangle"])
+    initial = cli("task", source, "-o", tmp_path / "task", "--categories", categories)
+    bad = {
+        "classifications": [],
+        "objects": [
+            {"key": "bad1", "label": "circle", "polygon": [[10, 10], [30, 10], [20, 30]]},
+            {"key": "bad2", "label": "rectangle", "box": [9, 9, 1, 1]},
+            {"key": "bad3", "label": "triangle", "polygon": [[1, 1], [2, 2]]},
+        ],
+    }
+    error = cli("submit", initial["task"], "--file", "-", stdin=json.dumps(bad), success=False)
+    assert error["code"] == "VALIDATION_ERROR"
+    details = error["details"]
+    for index, (key, message) in enumerate(
+        [
+            ("bad1", "allowed categories"),
+            ("bad2", "x1 < x2"),
+            ("bad3", "three distinct points"),
+        ]
+    ):
+        assert any(
+            f"objects[{index}] ({key})" in detail and message in detail for detail in details
+        )
+    assert all(
+        noise not in json.dumps(error) for noise in ["Value error,", "input_value", "pydantic"]
+    )
+    assert not (tmp_path / "task/pass1").exists()
+    assert not Path(str(source) + ".labels.json").exists()
+    # The same handle still accepts a corrected complete snapshot with the original receipt shape.
+    saved = cli("submit", initial["task"], "--file", "-", stdin=json.dumps(submission()))
+    assert saved["objects"] == 1 and saved["passes_left"] == 1
+    assert set(saved) == {"status", "task", "view", "objects", "passes_left"}

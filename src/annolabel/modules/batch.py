@@ -3,8 +3,18 @@
 import hashlib
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import ValidationError
+
 from annolabel.schemas.annotations import Annotation, Document
-from annolabel.schemas.workflow import Batch, Packet
+from annolabel.schemas.workflow import Batch, ObjectInput, Packet
+
+
+class BatchValidationError(ValueError):
+    """Plain per-object problems collected before any snapshot is persisted."""
+
+    def __init__(self, details: list[str]) -> None:
+        self.details = details
+        super().__init__("; ".join(details))
 
 
 def revision(document: Document) -> str:
@@ -76,14 +86,15 @@ def batch_document(batch: Batch, document: Document, packet: Packet | None = Non
         )
         for c in batch.classifications
     ]
-    for obj in batch.objects:
+    def object_annotations(obj: ObjectInput) -> list[Annotation]:
+        converted = []
         if (
             packet
             and packet.rules.categories is not None
             and obj.label not in packet.rules.categories
         ):
             raise ValueError(
-                f"object {obj.key}: label {obj.label!r} is not in the allowed categories"
+                f"label {obj.label!r} is not in the allowed categories: {packet.rules.categories}"
             )
         box, polygon = obj.box, obj.polygon
         if obj.view_id is not None:
@@ -106,14 +117,12 @@ def batch_document(batch: Batch, document: Document, packet: Packet | None = Non
         if box is None and polygon:
             xs, ys = zip(*polygon)
             box = (min(xs), min(ys), max(xs), max(ys))
-        if packet and packet.rules.geometry in {"both", "polygons"} and polygon is None:
-            raise ValueError(f"object {obj.key}: this task requires a polygon")
         for kind, points in [
             ("box", [box[:2], box[2:]] if box is not None else None),
             ("polygon", polygon),
         ]:
             if points is not None:
-                annotations.append(
+                converted.append(
                     Annotation(
                         id=by_object_kind.get((obj.key, kind)) or new_id(obj.key, kind),
                         object_id=obj.key,
@@ -123,4 +132,21 @@ def batch_document(batch: Batch, document: Document, packet: Packet | None = Non
                         note=obj.note,
                     )
                 )
+        Document(image=document.image, annotations=converted)
+        if packet and packet.rules.geometry in {"both", "polygons"} and polygon is None:
+            raise ValueError(f"object {obj.key}: this task requires a polygon")
+        return converted
+
+    problems = []
+    for index, obj in enumerate(batch.objects):
+        try:
+            annotations.extend(object_annotations(obj))
+        except ValidationError as error:
+            for detail in error.errors(include_url=False, include_input=False):
+                message = str(detail.get("ctx", {}).get("error", detail["msg"]))
+                problems.append(f"objects[{index}] ({obj.key}): {message}")
+        except ValueError as error:
+            problems.append(f"objects[{index}] ({obj.key}): {error}")
+    if problems:
+        raise BatchValidationError(problems)
     return Document(image=document.image, annotations=annotations)

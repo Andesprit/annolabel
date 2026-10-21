@@ -11,6 +11,7 @@ from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.export import export_dataset
 from annolabel.core.task import Task, TaskError, start_task
 from annolabel.core.workflow import Workflow
+from annolabel.modules.batch import BatchValidationError
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -267,6 +268,8 @@ def main() -> None:
                 result["details"] = error.errors(
                     include_url=False, include_context=False, include_input=False
                 )
+        if isinstance(error, BatchValidationError):
+            result["details"] = error.details
         print(json.dumps(result, ensure_ascii=False), file=sys.stderr)
         raise SystemExit(2) from None
 
