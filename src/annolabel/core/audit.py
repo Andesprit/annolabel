@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from shlex import quote
 
-from annolabel.core.inputs import read_model
+from annolabel.core.inputs import read_categories, read_model
 from annolabel.modules.batch import revision
 from annolabel.modules.discovery import (
     IMAGE_SUFFIXES,
@@ -30,6 +30,7 @@ from annolabel.schemas.audit import (
     NoteQueue,
     NoteRegion,
     OrphanSidecar,
+    VocabularyMismatch,
 )
 from annolabel.services.images.base import ImageServiceBase
 from annolabel.services.images.local import LocalImageService
@@ -217,17 +218,48 @@ def _orphan(sidecar: Path) -> OrphanSidecar:
     return OrphanSidecar(sidecar=str(sidecar), source=str(source), error=error, recovery=recovery)
 
 
+def _mismatches(
+    sources: list[AuditSource], categories: list[str], snapshot: Path
+) -> list[VocabularyMismatch]:
+    allowed = set(categories)
+    return [
+        VocabularyMismatch(
+            source_id=s.id,
+            image=s.image,
+            path=s.path,
+            label=o.label,
+            object_id=o.object_id,
+            annotation_ids=o.annotation_ids,
+            geometry=o.geometry,
+            review=s.actions["review"],
+            # boxes is the least restrictive rule: it never adds a polygon requirement.
+            correct=f"annolabel task {quote(s.path)} --categories {quote(str(snapshot))} "
+            "--geometry boxes --output NEW_TASK_DIR",
+        )
+        for s in sources
+        if s.status == "saved"
+        for o in s.objects
+        if o.label not in allowed
+    ]
+
+
 def audit_folder(
-    source: str, output: str, *, image_service: ImageServiceBase | None = None
+    source: str,
+    output: str,
+    *,
+    categories: str | None = None,
+    image_service: ImageServiceBase | None = None,
 ) -> dict:
     """Inspect every source image and sidecar below a folder without changing them.
 
     :param source: Source directory.
     :param output: New report directory (published atomically).
+    :param categories: Optional JSON file of allowed object labels; None checks nothing.
     :param image_service: Image reader; defaults to the local Pillow service.
     :returns: Reply with status, report/page paths, totals and issues.
     """
     service = image_service if image_service is not None else LocalImageService()
+    vocabulary = read_categories(categories) if categories is not None else None
     source_path = Path(source).expanduser().resolve(strict=True)
     if not source_path.is_dir():
         raise InputError(
@@ -298,6 +330,11 @@ def audit_folder(
             items=noted,
         )
         (temporary / "notes.json").write_text(queue.model_dump_json(indent=2) + "\n")
+        snapshot = destination / "categories.json"
+        mismatches = []
+        if vocabulary is not None:
+            (temporary / "categories.json").write_text(json.dumps(vocabulary) + "\n")
+            mismatches = _mismatches(sources, vocabulary, snapshot)
         report = AuditReport(
             observed_at=observed,
             source=str(source_path),
@@ -322,6 +359,9 @@ def audit_folder(
             orphan_sidecars=orphans,
             noted_items=len(noted),
             notes=str(destination / "notes.json"),
+            categories=vocabulary,
+            category_file=str(snapshot) if vocabulary is not None else None,
+            vocabulary_mismatches=mismatches,
         )
         (temporary / "audit.json").write_text(report.model_dump_json(indent=2) + "\n")
         os.rename(temporary, destination)
@@ -334,7 +374,7 @@ def audit_folder(
         for s in sources
         if s.status == "error"
     ] + [{"sidecar": o.sidecar, "code": o.code, "recovery": o.recovery} for o in orphans]
-    attention = bool(totals.unannotated or totals.errors or totals.orphan_sidecars)
+    attention = bool(totals.unannotated or totals.errors or totals.orphan_sidecars or mismatches)
     steps = []
     if totals.unannotated:
         steps.append(
@@ -343,6 +383,13 @@ def audit_folder(
         )
     if issues:
         steps.append(f"Resolve the {len(issues)} listed issue(s) using each recovery step.")
+    if mismatches:
+        steps.append(
+            f"{len(mismatches)} saved object(s) have labels outside the chosen object vocabulary "
+            "(case-sensitive; scene classes are not checked): audit.json vocabulary_mismatches "
+            "lists each with its review and correct actions. A correct action starts a NEW task "
+            "with fresh passes from the saved labels, using the audited category snapshot."
+        )
     if noted:
         steps.append(
             f"{len(noted)} saved item(s) carry explicit notes: notes.json lists each with its "
@@ -362,6 +409,15 @@ def audit_folder(
         "issues": issues,
         "noted_items": len(noted),
         "notes": report.notes,
+        **(
+            {
+                "categories": vocabulary,
+                "category_file": report.category_file,
+                "vocabulary_mismatches": len(mismatches),
+            }
+            if vocabulary is not None
+            else {}
+        ),
         "next": " ".join(steps),
         "note": "Saved is not reviewed or training ready; see the report note.",
     }

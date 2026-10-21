@@ -142,6 +142,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     audit.add_argument("source", help="Folder of source images and their sidecars")
     audit.add_argument("--output", "-o", required=True, help="New report directory")
+    audit.add_argument(
+        "--categories",
+        help="Optional JSON array of allowed object labels; lists saved objects outside it",
+    )
     export = commands.add_parser("export", help="Export a training dataset (default: COCO)")
     export.add_argument("source", help="An image or folder containing annotation sidecars")
     export.add_argument("--output", "-o", required=True, help="New dataset directory")
@@ -330,7 +334,7 @@ def main() -> None:
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         if args.command == "audit":
-            result = audit_folder(args.source, args.output)
+            result = audit_folder(args.source, args.output, categories=args.categories)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         if args.command == "export":

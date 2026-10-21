@@ -273,3 +273,68 @@ def test_no_notes_gives_empty_queue_and_old_reports_still_load(tmp_path: Path) -
     del old["noted_items"], old["notes"]
     legacy = AuditReport.model_validate(old)
     assert legacy.noted_items == 0 and legacy.notes is None
+
+
+def test_vocabulary_lists_every_excluded_object_once_and_ignores_scene_classes(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "my images"
+    mixed(folder)
+    before = hashes(folder)
+    vocab = tmp_path / "cats.json"
+    vocab.write_text('["rectangle", "outdoor"]')
+    reply = audit_folder(str(folder), str(tmp_path / "audit"), categories=str(vocab))
+    vocab.write_text('["changed"]')
+    assert hashes(folder) == before
+    report = AuditReport.model_validate_json(Path(reply["report"]).read_text())
+    [miss] = report.vocabulary_mismatches
+    assert (miss.image, miss.label, len(miss.annotation_ids)) == ("nested/a.png", "Rectangle", 2)
+    assert miss.geometry == ["box", "polygon"] and reply["vocabulary_mismatches"] == 1
+    snapshot = tmp_path / "audit" / "categories.json"
+    assert reply["category_file"] == report.category_file == str(snapshot)
+    assert json.loads(snapshot.read_text()) == ["rectangle", "outdoor"] == reply["categories"]
+    assert shlex.split(miss.correct)[1:] == [
+        "task",
+        miss.path,
+        "--categories",
+        str(snapshot),
+        "--geometry",
+        "boxes",
+        "--output",
+        "NEW_TASK_DIR",
+    ]
+    assert reply["status"] == "attention" and "vocabulary_mismatches" in reply["next"]
+    assert report.totals.objects == 2 and report.object_labels == {"Rectangle": 1, "rectangle": 1}
+    assert report.totals.errors == 3 and report.noted_items == 2
+
+    clean = tmp_path / "clean"
+    AnnoLabel(str(image(clean / "a.png"))).annotate("box", "cell", [(5, 5), (20, 20)])
+    AnnoLabel(str(image(clean / "b.png"))).annotate("label", "anything", [])
+    vocab.write_text("[]")
+    empty = audit_folder(str(clean), str(tmp_path / "empty"), categories=str(vocab))
+    assert empty["status"] == "attention" and empty["vocabulary_mismatches"] == 1
+    vocab.write_text('["cell"]')
+    ok = audit_folder(str(clean), str(tmp_path / "ok"), categories=str(vocab))
+    assert ok["status"] == "ready" and ok["vocabulary_mismatches"] == 0
+    plain = audit_folder(str(clean), str(tmp_path / "plain"))
+    assert "categories" not in plain and not (tmp_path / "plain" / "categories.json").exists()
+    old = json.loads(Path(plain["report"]).read_text())
+    assert old["categories"] is None and old["vocabulary_mismatches"] == []
+    for key in ("categories", "category_file", "vocabulary_mismatches"):
+        del old[key]
+    assert AuditReport.model_validate(old).vocabulary_mismatches == []
+
+
+@pytest.mark.parametrize("text", ["[", '{"a": 1}', '["a", "a"]', '[" "]', None])
+def test_bad_vocabulary_fails_before_any_output(tmp_path: Path, text: str | None) -> None:
+    folder = tmp_path / "images"
+    AnnoLabel(str(image(folder / "a.png"))).annotate("box", "cell", [(5, 5), (20, 20)])
+    vocab = tmp_path / "cats.json"
+    if text is not None:
+        vocab.write_text(text)
+    before = hashes(folder)
+    with pytest.raises(InputError) as error:
+        audit_folder(str(folder), str(tmp_path / "out"), categories=str(vocab))
+    assert error.value.recovery and "--categories" in str(error.value)
+    assert not (tmp_path / "out").exists() and hashes(folder) == before
+    assert not list(tmp_path.glob(".annolabel-audit-*"))

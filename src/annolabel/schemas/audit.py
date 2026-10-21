@@ -94,6 +94,20 @@ class NoteItem(StrictModel):
     open: str
 
 
+class VocabularyMismatch(StrictModel):
+    """One saved object whose literal label is not in the audit's chosen object vocabulary."""
+
+    source_id: int
+    image: str
+    path: str
+    label: str
+    object_id: str
+    annotation_ids: list[str]
+    geometry: list[Literal["box", "polygon"]]
+    review: str
+    correct: str
+
+
 class NoteQueue(StrictModel):
     """notes.json: a point-in-time reading list of noted items, not a review status."""
 
@@ -121,3 +135,6 @@ class AuditReport(StrictModel):
     orphan_sidecars: list[OrphanSidecar]
     noted_items: int = 0
     notes: str | None = None
+    categories: list[str] | None = None
+    category_file: str | None = None
+    vocabulary_mismatches: list[VocabularyMismatch] = []
