@@ -8,6 +8,7 @@ from shlex import quote
 from pydantic import ValidationError
 
 from annolabel.core.annolabel import AnnoLabel
+from annolabel.core.audit import audit_folder
 from annolabel.core.export import export_dataset
 from annolabel.core.inputs import parse_json, read_text
 from annolabel.core.task import retry_tasks, start_task, submit_task, task_status
@@ -110,6 +111,12 @@ def _parser() -> argparse.ArgumentParser:
         default=0.25,
         help="Surrounding context fraction (>0..2); minimum 16 pixels",
     )
+    audit = commands.add_parser(
+        "audit",
+        help="Read-only folder check before export: sources, label counts and overview pages",
+    )
+    audit.add_argument("source", help="Folder of source images and their sidecars")
+    audit.add_argument("--output", "-o", required=True, help="New report directory")
     export = commands.add_parser("export", help="Export a training dataset (default: COCO)")
     export.add_argument("source", help="An image or folder containing annotation sidecars")
     export.add_argument("--output", "-o", required=True, help="New dataset directory")
@@ -190,6 +197,7 @@ def _recovery(args: argparse.Namespace) -> str:
         "prepare": "Correct the named input or rule and retry annolabel prepare with a new --output directory.",
         "apply": "Correct the complete snapshot in --file and retry; for a stale revision, run annolabel prepare IMAGE --output NEW_DIR and reconcile with its annotations.json.",
         "review": "Correct --regions, --packet, --per-page (1..4) or --padding (>0..2) as named, then retry with a new --output directory.",
+        "audit": "Pass an existing source folder and a new --output directory, then retry annolabel audit FOLDER --output NEW_AUDIT_DIR.",
         "export": "Correct the named source or --categories vocabulary, then retry annolabel export SOURCE --output NEW_DATASET; use a new output directory.",
         "info": "Check the image path and the named .labels.json sidecar; restore the original image or repair the sidecar before retrying annolabel info.",
         "label": f"{info} to read current annotations; pass a nonempty --label and an existing --id when replacing one.",
@@ -290,6 +298,10 @@ def main() -> None:
                     per_page=args.per_page,
                     padding=args.padding,
                 )
+            print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+            return
+        if args.command == "audit":
+            result = audit_folder(args.source, args.output)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         if args.command == "export":

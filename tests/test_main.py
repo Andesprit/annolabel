@@ -187,3 +187,11 @@ def test_submit_allow_empty_flag_preserves_retry_contract(
     main()
     output = capsys.readouterr()
     assert not output.err and json.loads(output.out) == saved
+
+
+def test_audit_reports_folder_and_redirects_single_images(source: Path, tmp_path: Path) -> None:
+    reply = cli("audit", tmp_path, "-o", tmp_path / "audit")
+    assert reply["status"] == "attention" and reply["totals"]["unannotated"] == 1
+    assert Path(reply["report"]).is_file() and len(reply["pages"]) == 1
+    error = cli("audit", source, "-o", tmp_path / "other", success=False)
+    assert error["code"] == "NOT_A_FOLDER" and "annolabel review" in error["recovery"]

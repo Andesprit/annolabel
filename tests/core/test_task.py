@@ -50,6 +50,9 @@ def test_folder_start_creates_distinct_submittable_tasks(tmp_path: Path) -> None
     (dataset / "annotations").mkdir(parents=True)
     (dataset / "annotations/instances_default.json").write_text("{}")
     Image.new("RGB", (100, 80)).save(dataset / "export.png")
+    (folder / "previous-audit").mkdir()
+    (folder / "previous-audit/audit.json").write_text("{}")
+    Image.new("RGB", (100, 80)).save(folder / "previous-audit/page-001.png")
     output = folder / "new-tasks"
     initial = cli("task", folder, "-o", output, "--max-passes", 1)
     assert initial["index"] == str(output / "tasks.json")
