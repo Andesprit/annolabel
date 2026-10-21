@@ -196,21 +196,29 @@ Masks contain 0 for background and 255 for foreground. PNG masks use Pillow rast
 
 ## Label folders and batch agent work
 
-`task`, `submit`, and `review` operate on **one image at a time**. Folder traversal and model scheduling belong to the calling agent or your orchestrator. `export` accepts an entire source folder.
+Start a folder once; AnnoLabel creates an ordinary task for each image and a `tasks.json` index:
 
-For a folder, ask your agent to:
+```sh
+annolabel task /data/images --output /data/work/image-tasks
+annolabel task-status /data/work/image-tasks/tasks.json
+```
 
-1. Enumerate original source images, excluding previews, masks, and exports.
-2. Create one task per image in separate output directories.
-3. Open a manageable group of images if its image tool and model support that.
-4. Submit one full snapshot per source image, then review each resulting view.
-5. Export the annotated source folder once the group is complete.
+1. Open the view named by `next`, and submit a complete snapshot using `next_task`, the per-image handle. For example: `annolabel submit /data/work/image-tasks/000001/task.json --file /data/work/image-a-labels.json`.
+2. Open the saved view and, if needed, correct it using the new handle returned by `submit`. Each image retains the usual pass limit, replay behavior and removal guards.
+3. Run `task-status` on the folder index whenever you need progress or lose a reply. It follows each image's checkpoint chain, including corrections, and names the next pending handle.
+4. When all images are saved, status returns the export command: `annolabel export /data/images --output NEW_DATASET`. Replace `NEW_DATASET` with a new output directory.
+
+Status lists each source image with its latest `task`, `view`, `state` (`saved`, `pending`, or `error`), `objects` and `passes_left`, plus `totals` for images, saved and pending. Saved means a snapshot was submitted in this folder task, including an intentionally empty one. Pending totals include unresolved error entries. If a checkpoint is missing or damaged, its entry contains `error`, `code` and `recovery`; healthy entries remain available, and the overall status is `attention`. Resolve those errors before exporting. Passing the folder index to `submit` returns `IMAGE_TASK_REQUIRED` and directs you to a per-image handle.
+
+Folder start discovers files recursively by extension: `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tif`, `.tiff` and `.gif`, case-insensitively. Multi-frame images remain unsupported. Sources are sorted by resolved path and symlink aliases are deduplicated. Task directories are numbered `000001`, `000002`, and so on; the index maps each number to its source, so nested files and equal stems cannot collide. The index fixes the image list at creation.
+
+The new output directory and existing AnnoLabel bundles marked by `packet.json`, `tasks.json` or `annotations/instances_default.json` are excluded from discovery. **Keep unmarked loose previews and masks outside the source folder**: they look like source images. Folder export uses annotation sidecars, rather than image extensions, and includes only images with saved sidecars. An empty folder or one containing no supported source images returns `NO_IMAGES` with recovery instructions.
 
 An agent may group two independent submissions into one shell call:
 
 ```sh
-annolabel submit /data/work/image-a/task.json --file /data/work/image-a-labels.json
-annolabel submit /data/work/image-b/task.json --file /data/work/image-b-labels.json
+annolabel submit /data/work/image-tasks/000001/task.json --file /data/work/image-a-labels.json
+annolabel submit /data/work/image-tasks/000002/task.json --file /data/work/image-b-labels.json
 ```
 
 These are separate image operations, not one atomic multi-image transaction. Check each command's result: the final shell exit status alone does not establish that both succeeded. Keep **one writer per source image**; concurrent agents can work on different images. Avoid stitching images unless your calling system also handles the coordinate mapping back to each source. AnnoLabel does not implement LLM batching or image-stitching inference.
@@ -320,6 +328,8 @@ Failures, including argument-parsing errors, return one JSON object on stderr wi
 | `OUTPUT_EXISTS` | Choose a new task, review, or export directory. `render` and `mask` can explicitly overwrite their PNGs with `--force`. |
 | Annotation outlines are shifted | Recheck original oriented dimensions and whether coordinates came from a resized or padded image. |
 | `NO_ANNOTATIONS` | Run `task` and `submit` for the source images first, then export the folder containing their sidecars. |
+| `NO_IMAGES` | Pass a folder containing supported source images; keep generated views outside it and use a new task output directory. |
+| `IMAGE_TASK_REQUIRED` | Run `task-status` on the folder's `tasks.json`, then submit using the returned per-image `next_task`. |
 
 Current scope:
 
@@ -350,4 +360,3 @@ Run `annolabel COMMAND --help` for full arguments.
 | `apply IMAGE --file JSON --packet PACKET --output DIR` | Apply a complete revision-aware snapshot and render detailed reviews. |
 | `review IMAGE --output DIR` | Render detailed review pages or custom regions. |
 | `export IMAGE_OR_FOLDER --output DIR` | Export a COCO dataset. |
-

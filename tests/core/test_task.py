@@ -1,6 +1,7 @@
 """Real CLI checks for the short task protocol and safe recovery."""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -60,9 +61,12 @@ def test_folder_start_creates_distinct_submittable_tasks(tmp_path: Path) -> None
         assert Task(item["task"]).status() == saved
 
 
-def test_folder_start_rejects_empty_and_used_output(tmp_path: Path) -> None:
+@pytest.mark.parametrize("non_images", [False, True])
+def test_folder_start_rejects_empty_and_used_output(tmp_path: Path, non_images: bool) -> None:
     folder = tmp_path / "images"
     folder.mkdir()
+    if non_images:
+        (folder / "notes.txt").write_text("No images here")
     output = tmp_path / "tasks"
     error = cli("task", folder, "-o", output, success=False)
     assert error["code"] == "NO_IMAGES" and str(folder) in error["error"]
@@ -118,6 +122,90 @@ def test_folder_failure_cleans_up_and_forwards_rules(tmp_path: Path) -> None:
         Task(entry["task"]).submit(json.dumps(bad_payload))
     assert not (Path(entry["task"]).parent / "pass1").exists()
     assert Task(entry["task"]).submit(json.dumps(submission()))["status"] == "saved"
+
+
+def test_folder_status_tracks_progress_corrections_and_export(source: Path, tmp_path: Path) -> None:
+    from annolabel.core.task import task_status
+
+    folder = tmp_path / "images"
+    for name in ["a.png", "b.png", "sub/a.png"]:
+        image = folder / name
+        image.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, image)
+    initial = start_task(str(folder), str(tmp_path / "tasks"))
+    before = task_status(initial["index"])
+    assert before["totals"] == {"images": 3, "saved": 0, "pending": 3}
+    assert [t["state"] for t in before["tasks"]] == ["pending"] * 3
+    assert before["next_task"] == initial["tasks"][0]["task"]
+    assert before["next_task"] in before["next"]
+    assert all(t["objects"] == 0 and t["passes_left"] == 2 for t in before["tasks"])
+    payload = json.dumps(submission())
+    first = Task(before["next_task"]).submit(payload)
+    during = task_status(initial["index"])
+    assert during["totals"] == {"images": 3, "saved": 1, "pending": 2}
+    assert during["next_task"] == initial["tasks"][1]["task"]
+    assert during["tasks"][0] == {
+        "image": initial["tasks"][0]["image"],
+        "state": "saved",
+        **{key: first[key] for key in ["task", "view", "objects", "passes_left"]},
+    }
+    changed = submission()
+    changed["objects"][0]["label"] = "square"
+    corrected = Task(first["task"]).submit(json.dumps(changed))
+    after_correction = task_status(initial["index"])
+    assert after_correction["tasks"][0]["task"] == corrected["task"]
+    assert after_correction["tasks"][0]["passes_left"] == 0
+    for item in after_correction["tasks"][1:]:
+        Task(item["task"]).submit(payload)
+    complete = task_status(initial["index"])
+    assert complete["status"] == "complete"
+    assert complete["totals"] == {"images": 3, "saved": 3, "pending": 0}
+    assert complete["next_task"] is None
+    assert complete["next"] == f"annolabel export {folder} --output NEW_DATASET"
+    exported = cli("export", folder, "-o", tmp_path / "dataset")
+    assert exported["images"] == exported["objects"] == 3
+
+
+@pytest.mark.parametrize(
+    "broken", ["missing", "missing_view", "invalid_receipt", "conflict", "wrong_image"]
+)
+def test_folder_status_isolates_broken_entries(source: Path, tmp_path: Path, broken: str) -> None:
+    from annolabel.core.task import task_status
+
+    folder = tmp_path / "images"
+    folder.mkdir()
+    for name in ["a.png", "b.png"]:
+        shutil.copyfile(source, folder / name)
+    initial = start_task(str(folder), str(tmp_path / "tasks"))
+    first, second = initial["tasks"]
+    if broken == "missing":
+        shutil.rmtree(Path(first["task"]).parent)
+    elif broken == "missing_view":
+        Path(first["view"]).unlink()
+    elif broken == "invalid_receipt":
+        saved = Task(first["task"]).submit(json.dumps(submission()))
+        (Path(saved["task"]).parent / "receipt.json").write_text("{}")
+    elif broken == "conflict":
+        AnnoLabel(first["image"]).annotate("label", "external edit", [])
+    else:
+        index = json.loads(Path(initial["index"]).read_text())
+        index["tasks"][0]["image"] = second["image"]
+        Path(initial["index"]).write_text(json.dumps(index))
+        first["image"] = second["image"]
+    status = task_status(initial["index"])
+    assert status["status"] == "attention"
+    assert status["totals"] == {"images": 2, "saved": 0, "pending": 2}
+    bad, good = status["tasks"]
+    assert bad["state"] == "error" and bad["image"] == first["image"]
+    assert bad["error"] and bad["code"] and bad["recovery"]
+    assert bad["objects"] is None and bad["passes_left"] is None
+    assert good["state"] == "pending" and good["task"] == second["task"]
+    assert status["next_task"] == second["task"]
+    Task(second["task"]).submit(json.dumps(submission()))
+    status = task_status(initial["index"])
+    assert status["totals"] == {"images": 2, "saved": 1, "pending": 1}
+    assert status["next_task"] is None and "task-status" in status["next"]
+    assert "annolabel export" not in status["next"]
 
 
 def test_short_task_two_passes_recovery_retry_and_export(source: Path, tmp_path: Path) -> None:

@@ -72,6 +72,15 @@ annolabel export shapes.png --output dataset
 
 Open `task/pass1/view.png` to review the result. The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
 
+For a folder, start once and check progress:
+
+```sh
+annolabel task /data/images --output /data/work/image-tasks
+annolabel task-status /data/work/image-tasks/tasks.json
+```
+
+Open each returned view and submit its per-image `task.json`; status names the next handle and, when all images are saved, the exact export command. Keep loose previews and masks outside the source folder. See the [folder workflow](docs/usage.md#label-folders-and-batch-agent-work).
+
 ## Learn more
 
 - [Commands, coordinates, review, recovery, and COCO export](docs/usage.md)

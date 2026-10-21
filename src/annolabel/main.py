@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.export import export_dataset
 from annolabel.core.inputs import parse_json, read_text
-from annolabel.core.task import Task, start_task
+from annolabel.core.task import start_task, submit_task, task_status
 from annolabel.core.workflow import Workflow
 from annolabel.modules.validation import InputError, validation_details
 
@@ -44,7 +44,7 @@ def _parser() -> argparse.ArgumentParser:
     submit = commands.add_parser(
         "submit", help="Submit classifications and objects against a saved task handle"
     )
-    submit.add_argument("task", help="task.json returned by task, submit, or task-status")
+    submit.add_argument("task", help="Per-image task.json returned by task, submit, or task-status")
     submit.add_argument(
         "--file", required=True, help="JSON with classifications and objects only, or - for stdin"
     )
@@ -52,9 +52,9 @@ def _parser() -> argparse.ArgumentParser:
         "--allow-empty", action="store_true", help="Allow a snapshot to remove all saved objects"
     )
     status = commands.add_parser(
-        "task-status", help="Recover the latest task handle and view after lost output"
+        "task-status", help="Recover an image task or report progress from a folder tasks.json"
     )
-    status.add_argument("task")
+    status.add_argument("task", help="Image task.json or folder tasks.json")
     prepare = commands.add_parser(
         "prepare", help="Create agent views, task rules, schema, and an editable snapshot"
     )
@@ -248,9 +248,9 @@ def main() -> None:
                 )
             elif args.command == "submit":
                 payload = _payload(args)
-                result = Task(args.task).submit(payload, allow_empty=args.allow_empty)
+                result = submit_task(args.task, payload, allow_empty=args.allow_empty)
             else:
-                result = Task(args.task).status()
+                result = task_status(args.task)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":")))
             return
         if args.command in {"prepare", "apply", "review"}:

@@ -42,4 +42,4 @@ class FolderTaskIndex(StrictModel):
     version: Literal[1] = 1
     kind: Literal["folder"] = "folder"
     source: str
-    tasks: list[FolderTaskEntry]
+    tasks: list[FolderTaskEntry] = Field(min_length=1)

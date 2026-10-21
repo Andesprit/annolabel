@@ -6,6 +6,8 @@ AnnoLabel supplies annotation operations. You, the vision-capable agent, supply 
 
 By default, prefer `task IMAGE --output NEW_DIR` followed by `submit TASK_JSON --file JSON_OR_-`. Open the returned coordinate view, submit all classifications/objects, open the returned view once, and optionally submit one corrected complete snapshot using the NEW task handle. Submit only `classifications` and `objects`; the handle manages hashes, revisions and output paths. The short view has exact oriented source dimensions with no padding, rulers, grid or resizing: image top-left is (0,0), x right, y down. Initial and review views share original pixel coordinates. Do not measure a resized viewer thumbnail. Check clipped contours, background inclusion, missed protrusions, object omissions and label meaning. Keep unchanged annotations in a correction. Submit receipts list added/changed/removed object keys in `changes` and warn about removals. A snapshot removing all saved objects is refused without using a pass; retry the same handle with `submit TASK_JSON --file JSON_OR_- --allow-empty` only when the empty result is intentional. An empty first submission is allowed when no objects were previously saved. If output is lost, `task-status INITIAL_TASK_JSON` recovers the latest handle and view; do not reconstruct revisions or inspect implementation. Stop after the correction and report uncertainty. Each task allows at most two successful submissions; `--max-passes 1` permits only one. Export COCO normally.
 
+For a folder, use `task FOLDER --output NEW_DIR`, submit each returned per-image handle, and run `task-status NEW_DIR/tasks.json` for saved/pending progress, latest handles and the export command when complete; keep loose previews and masks outside the source folder.
+
 ## Detailed workflow when additional review is requested
 
 Use this workflow for full packets and crop pages:
@@ -34,7 +36,7 @@ The existing low-level commands remain available for small edits and compatibili
 6. If requested, use `mask --id POLYGON_ID --output <MASK.png>` for a binary segmentation mask. It rasterizes your polygon; it does not infer a boundary.
 7. Report the sidecar and preview paths and any uncertainties. Do not claim pixel-perfect accuracy from valid JSON alone.
 
-For folders, enumerate original source images first and repeat per image. Keep previews and masks outside the source folder. Serialize edits to each image; do not run multiple writers against the same sidecar.
+When using low-level commands for folders, enumerate original source images first and repeat per image. Keep previews and masks outside the source folder. Serialize edits to each image; do not run multiple writers against the same sidecar.
 
 A basic example:
 

@@ -8,11 +8,11 @@ from shlex import quote
 
 from pydantic import ValidationError
 
-from annolabel.core.inputs import read_model
+from annolabel.core.inputs import parse_json, read_model, read_text
 from annolabel.core.workflow import Workflow
 from annolabel.modules.batch import batch_document, parse_snapshot, revision, snapshot
 from annolabel.modules.discovery import IMAGE_SUFFIXES, discover_images
-from annolabel.modules.validation import InputError
+from annolabel.modules.validation import InputError, validation_details
 from annolabel.schemas.task import FolderTaskEntry, FolderTaskIndex, Submission, TaskHandle
 from annolabel.schemas.workflow import Batch
 
@@ -126,8 +126,123 @@ def _start_folder(
         "source": str(source_path),
         "images": len(entries),
         "tasks": [entry.model_dump() for entry in entries],
-        "next": "Open each view, then run annolabel submit TASK_JSON --file ANNOTATIONS_JSON "
-        f"using that image's task handle; start with {quote(entries[0].task)}.",
+        "next_task": entries[0].task,
+        "next": f"Open {quote(entries[0].view)}, then run annolabel submit "
+        f"{quote(entries[0].task)} --file ANNOTATIONS_JSON. "
+        f"Run annolabel task-status {quote(str(index_path))} for folder progress.",
+    }
+
+
+def _folder_index(path: str) -> FolderTaskIndex | None:
+    try:
+        data = parse_json(read_text(path, "task handle"), f"task handle {path!r}")
+    except InputError:
+        # Non-index inputs retain the existing per-image task diagnostics.
+        return None
+    if isinstance(data, dict) and data.get("kind") == "folder":
+        return read_model(
+            path,
+            FolderTaskIndex,
+            "folder task index",
+            "Pass the tasks.json returned by annolabel task FOLDER; restore the original "
+            "index if it was changed. Submit snapshots using its per-image task.json handles.",
+        )
+    return None
+
+
+def task_status(path: str) -> dict:
+    """Recover one image checkpoint or the current progress of a folder index."""
+    index = _folder_index(path)
+    return _folder_status(path, index) if index is not None else Task(path).status()
+
+
+def submit_task(path: str, payload: str, *, allow_empty: bool = False) -> dict:
+    """Submit one image snapshot, explaining how to use a folder index if supplied."""
+    index = _folder_index(path)
+    if index is not None:
+        status = _folder_status(path, index)
+        raise TaskError(
+            "IMAGE_TASK_REQUIRED",
+            f"{path!r} is a folder task index; submit accepts one image task.json at a time.",
+            f"Run annolabel task-status {quote(path)} and use a per-image task handle. "
+            + status["next"],
+        )
+    return Task(path).submit(payload, allow_empty=allow_empty)
+
+
+def _folder_status(path: str, index: FolderTaskIndex) -> dict:
+    entries = []
+    for entry in index.tasks:
+        try:
+            task = Task(entry.task)
+            if task.handle.image != entry.image:
+                raise TaskError(
+                    "TASK_CONFLICT",
+                    f"Folder entry {entry.image!r} points to a task for {task.handle.image!r}.",
+                    f"Restore the matching per-image handle in {path!r} and rerun task-status.",
+                )
+            current = task.status()
+            if not Path(current["view"]).is_file():
+                raise TaskError(
+                    "IO_ERROR",
+                    f"Task view is unavailable: {current['view']!r}.",
+                    f"Restore the view {current['view']!r}, then run annolabel task-status {quote(path)}.",
+                )
+            entries.append(
+                {
+                    "image": entry.image,
+                    "state": "saved" if current["status"] == "saved" else "pending",
+                    **{key: current[key] for key in ["task", "view", "objects", "passes_left"]},
+                }
+            )
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            if isinstance(error, InputError):
+                failure = {"error": str(error), "code": error.code, "recovery": error.recovery}
+                if error.details is not None:
+                    failure["details"] = error.details
+            else:
+                failure = {
+                    "error": f"Cannot read checkpoint for task {entry.task!r}.",
+                    "code": "IO_ERROR" if isinstance(error, OSError) else "VALIDATION_ERROR",
+                    "recovery": f"Restore checkpoint files for {entry.task!r}, then run "
+                    f"annolabel task-status {quote(path)}; do not reconstruct revisions.",
+                }
+                if isinstance(error, OSError):
+                    failure["error"] += (
+                        f" File {error.filename or entry.task!r}: {error.strerror or 'unavailable'}."
+                    )
+                elif isinstance(error, ValidationError):
+                    failure["details"] = validation_details(error)
+            entries.append(
+                {
+                    "image": entry.image,
+                    "task": entry.task,
+                    "view": entry.view,
+                    "state": "error",
+                    "objects": None,
+                    "passes_left": None,
+                    **failure,
+                }
+            )
+    saved = sum(entry["state"] == "saved" for entry in entries)
+    pending = next((entry for entry in entries if entry["state"] == "pending"), None)
+    errors = any(entry["state"] == "error" for entry in entries)
+    if pending:
+        next_step = f"Open {quote(pending['view'])}, then run annolabel submit "
+        next_step += f"{quote(pending['task'])} --file ANNOTATIONS_JSON. "
+        next_step += f"Run annolabel task-status {quote(path)} for folder progress."
+    elif errors:
+        next_step = f"Resolve the per-image errors, then run annolabel task-status {quote(path)}."
+    else:
+        next_step = f"annolabel export {quote(index.source)} --output NEW_DATASET"
+    return {
+        "status": "attention" if errors else ("complete" if saved == len(entries) else "ready"),
+        "index": str(Path(path).expanduser().absolute()),
+        "source": index.source,
+        "tasks": entries,
+        "totals": {"images": len(entries), "saved": saved, "pending": len(entries) - saved},
+        "next_task": pending["task"] if pending else None,
+        "next": next_step,
     }
 
 

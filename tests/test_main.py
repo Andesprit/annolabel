@@ -40,6 +40,26 @@ def test_missing_task_returns_actionable_io_error(tmp_path: Path) -> None:
     assert error["code"] == "IO_ERROR" and error["recovery"]
 
 
+def test_folder_index_status_and_submit_recovery(source: Path, tmp_path: Path) -> None:
+    folder = tmp_path / "images with spaces"
+    folder.mkdir()
+    source.rename(folder / source.name)
+    initial = cli("task", folder, "-o", tmp_path / "tasks with spaces")
+    status = cli("task-status", initial["index"])
+    assert status["totals"] == {"images": 1, "saved": 0, "pending": 1}
+    payload = json.dumps({"classifications": [], "objects": []})
+    error = cli("submit", initial["index"], "--file", "-", stdin=payload, success=False)
+    assert error["code"] == "IMAGE_TASK_REQUIRED"
+    assert "task-status" in error["recovery"] and status["next_task"] in error["recovery"]
+    assert not list(folder.glob("*.labels.json"))
+    cli("submit", status["next_task"], "--file", "-", stdin=payload)
+    status = cli("task-status", initial["index"])
+    assert status["totals"] == {"images": 1, "saved": 1, "pending": 0}
+    assert status["tasks"][0]["state"] == "saved"
+    error = cli("submit", initial["index"], "--file", "-", stdin=payload, success=False)
+    assert error["code"] == "IMAGE_TASK_REQUIRED" and "task-status" in error["recovery"]
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
