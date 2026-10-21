@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic import TypeAdapter, ValidationError
 
 from annolabel.core.annolabel import AnnoLabel
-from annolabel.core.inputs import parse_json, read_categories, read_model, read_text
+from annolabel.core.inputs import parse_json, read_model, read_rules, read_text
 from annolabel.modules.batch import batch_document, check_packet, parse_snapshot, revision
 from annolabel.modules.validation import InputError, validation_details
 from annolabel.modules.views import write_bundle
@@ -47,15 +47,18 @@ class Workflow(AnnoLabel):
         categories: str | None = None,
         geometry: str = "both",
         short: bool = False,
+        rules: Rules | None = None,
+        extra_files: dict[str, dict] | None = None,
     ) -> dict:
         """Create original/grid views, current snapshot, schema, and task context."""
-        rules = Rules(
-            geometry=geometry,
-            **({"instructions": read_text(instructions, "--instructions")} if instructions else {}),
-            categories=read_categories(categories) if categories else None,
-        )
         return write_bundle(
-            self.image, self.document, output, rules=rules, prepare=True, short=short
+            self.image,
+            self.document,
+            output,
+            rules=rules or read_rules(instructions, categories, geometry),
+            prepare=True,
+            short=short,
+            extra_files=extra_files,
         )
 
     def review(

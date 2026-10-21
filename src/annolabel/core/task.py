@@ -8,13 +8,19 @@ from shlex import quote
 
 from pydantic import ValidationError
 
-from annolabel.core.inputs import parse_json, read_model, read_text
+from annolabel.core.inputs import parse_json, read_model, read_rules, read_text
 from annolabel.core.workflow import Workflow
 from annolabel.modules.batch import batch_document, parse_snapshot, revision, snapshot
 from annolabel.modules.discovery import IMAGE_SUFFIXES, discover_images
 from annolabel.modules.validation import InputError, validation_details
-from annolabel.schemas.task import FolderTaskEntry, FolderTaskIndex, Submission, TaskHandle
-from annolabel.schemas.workflow import Batch
+from annolabel.schemas.task import (
+    FolderStartFailure,
+    FolderTaskEntry,
+    FolderTaskIndex,
+    Submission,
+    TaskHandle,
+)
+from annolabel.schemas.workflow import Batch, Rules
 
 
 class TaskError(InputError):
@@ -55,19 +61,34 @@ def start_task(
     categories: str | None = None,
     geometry: str = "both",
     max_passes: int = 2,
+    keep_going: bool = False,
 ) -> dict:
     """Create a coordinate view and immutable initial task handle."""
     if Path(image).expanduser().is_dir():
         return _start_folder(
             image,
             output,
-            instructions=instructions,
-            categories=categories,
-            geometry=geometry,
+            rules=read_rules(instructions, categories, geometry),
             max_passes=max_passes,
+            keep_going=keep_going,
+        )
+    if keep_going:
+        raise InputError(
+            "VALIDATION_ERROR",
+            f"--keep-going applies to folders; {image!r} is a single image.",
+            f"Rerun annolabel task {quote(image)} --output NEW_DIR without --keep-going.",
         )
     workflow = Workflow(image)
-    output_path = Path(output).expanduser().absolute()
+    return _publish(
+        workflow,
+        Path(output).expanduser().absolute(),
+        read_rules(instructions, categories, geometry),
+        max_passes,
+    )
+
+
+def _publish(workflow: Workflow, output_path: Path, rules: Rules, max_passes: int) -> dict:
+    """Publish the view bundle and its task handle together in one new directory."""
     handle = TaskHandle(
         image=str(workflow.path),
         snapshot=str(output_path / "annotations.json"),
@@ -75,17 +96,8 @@ def start_task(
         max_passes=max_passes,
     )
     workflow.prepare(
-        str(output_path),
-        instructions=instructions,
-        categories=categories,
-        geometry=geometry,
-        short=True,
+        str(output_path), rules=rules, short=True, extra_files={"task.json": handle.model_dump()}
     )
-    try:
-        (output_path / "task.json").write_text(handle.model_dump_json(indent=2) + "\n")
-    except Exception:
-        shutil.rmtree(output_path)
-        raise
     return _context(
         {
             "status": "ready",
@@ -99,14 +111,37 @@ def start_task(
     )
 
 
+def _start_problem(error: OSError | ValueError, image: str, index: str | None) -> dict:
+    """Describe one source that cannot start and how to retry only it."""
+    if isinstance(error, InputError):
+        problem = {"error": str(error), "code": error.code, "recovery": error.recovery + " Then"}
+    else:
+        reason = (error.strerror if isinstance(error, OSError) else None) or str(error)
+        problem = {
+            "error": f"Cannot start a task for source {image!r}: {reason}.",
+            "code": "IO_ERROR" if isinstance(error, OSError) else "VALIDATION_ERROR",
+            "recovery": f"Fix or replace {image!r} at the same path, then",
+        }
+    if index is None:
+        problem["recovery"] += (
+            " retry annolabel task FOLDER --output NEW_DIR. Nothing was created. To label the "
+            "other images now, add --keep-going and later run annolabel task-retry on its tasks.json."
+        )
+    else:
+        problem["recovery"] += (
+            f" run annolabel task-retry {quote(index)}. Other images can be labeled meanwhile."
+        )
+    return problem
+
+
+def _retry_marker(entry: FolderStartFailure) -> Path:
+    """Record kept beside the index once task-retry starts publishing this source's slot."""
+    slot = Path(entry.task).parent
+    return slot.parent / "retries" / f"{slot.name}.json"
+
+
 def _start_folder(
-    source: str,
-    output: str,
-    *,
-    instructions: str | None,
-    categories: str | None,
-    geometry: str,
-    max_passes: int,
+    source: str, output: str, *, rules: Rules, max_passes: int, keep_going: bool
 ) -> dict:
     source_path = Path(source).expanduser().resolve(strict=True)
     output_path = Path(output).expanduser().absolute()
@@ -125,18 +160,29 @@ def _start_folder(
             + ", ".join(sorted(IMAGE_SUFFIXES))
             + "); generated AnnoLabel bundles are excluded. Retry annolabel task FOLDER --output NEW_DIR.",
         )
+    index_path = output_path / "tasks.json"
     output_path.mkdir(parents=True)
     try:
         entries, first = [], None
         for number, image in enumerate(images, start=1):
-            result = start_task(
-                str(image),
-                str(output_path / f"{number:06d}"),
-                instructions=instructions,
-                categories=categories,
-                geometry=geometry,
-                max_passes=max_passes,
-            )
+            slot = output_path / f"{number:06d}"
+            try:
+                workflow = Workflow(str(image))
+            except (OSError, ValueError) as error:
+                if not keep_going:
+                    problem = _start_problem(error, str(image), None)
+                    raise InputError(
+                        problem["code"], problem["error"], problem["recovery"]
+                    ) from None
+                entries.append(
+                    FolderStartFailure(
+                        image=str(image),
+                        task=str(slot / "task.json"),
+                        **_start_problem(error, str(image), str(index_path)),
+                    )
+                )
+                continue
+            result = _publish(workflow, slot, rules, max_passes)
             first = first or result
             entries.append(
                 FolderTaskEntry(
@@ -144,21 +190,71 @@ def _start_folder(
                     **{key: result[key] for key in FolderTaskEntry.model_fields if key != "image"},
                 )
             )
-        index = FolderTaskIndex(source=str(source_path), tasks=entries)
-        index_path = output_path / "tasks.json"
+        index = FolderTaskIndex(
+            source=str(source_path), rules=rules, max_passes=max_passes, tasks=entries
+        )
         index_path.write_text(index.model_dump_json(indent=2) + "\n")
     except Exception:
         shutil.rmtree(output_path)
         raise
+    failed = sum(isinstance(entry, FolderStartFailure) for entry in entries)
+    retry = (
+        f"{failed} source(s) could not start; see their errors, fix them, then run "
+        f"annolabel task-retry {quote(str(index_path))}."
+        if failed
+        else ""
+    )
     return {
-        "status": "ready",
+        "status": "attention" if failed else "ready",
         "index": str(index_path),
         "source": str(source_path),
         "images": len(entries),
         "tasks": [entry.model_dump() for entry in entries],
-        "next_task": entries[0].task,
-        "next": _folder_next(first, str(index_path)),
+        "next_task": first["task"] if first else None,
+        "next": " ".join(
+            filter(None, [_folder_next(first, str(index_path)) if first else "", retry])
+        ),
     }
+
+
+def retry_tasks(path: str) -> dict:
+    """Start only the indexed sources that failed at start, reusing the frozen rules."""
+    index = _folder_index(path)
+    if index is None:
+        raise TaskError(
+            "FOLDER_INDEX_REQUIRED",
+            f"{path!r} is not a folder tasks.json.",
+            "Pass the tasks.json returned by annolabel task FOLDER --keep-going.",
+        )
+    retried = []
+    for entry in index.tasks:
+        if not isinstance(entry, FolderStartFailure):
+            continue
+        slot, marker = Path(entry.task).parent, _retry_marker(entry)
+        if marker.exists() or slot.exists() or slot.is_symlink():
+            # Started, occupied or missing-after-start slots are never rebuilt; status reports them.
+            continue
+        try:
+            workflow = Workflow(entry.image)
+        except (OSError, ValueError):
+            continue
+        marker.parent.mkdir(exist_ok=True)
+        # Written first, so a deleted slot can never be regenerated with a fresh pass budget.
+        with marker.open("x") as file:
+            json.dump({"image": entry.image, "task": entry.task}, file)
+        try:
+            _publish(workflow, slot, index.rules, index.max_passes)
+        except BaseException:
+            marker.unlink()
+            raise
+        retried.append(entry.image)
+    status = _folder_status(path, index)
+    done = (
+        f"task-retry started {len(retried)} source(s)."
+        if retried
+        else "task-retry started nothing; no failed source could start yet."
+    )
+    return {**status, "retried": retried, "next": f"{done} {status['next']}"}
 
 
 def _folder_next(current: dict, index: str) -> str:
@@ -213,6 +309,30 @@ def submit_task(path: str, payload: str, *, allow_empty: bool = False) -> dict:
 def _folder_status(path: str, index: FolderTaskIndex) -> dict:
     entries, pending = [], None
     for entry in index.tasks:
+        slot = Path(entry.task).parent
+        if isinstance(entry, FolderStartFailure) and not (slot.exists() or slot.is_symlink()):
+            marker = _retry_marker(entry)
+            failure = entry.model_dump(include={"error", "code", "recovery"})
+            if marker.exists():
+                failure = {
+                    "error": f"Retried task {entry.task!r} for {entry.image!r} is missing.",
+                    "code": "TASK_MISSING",
+                    "recovery": f"Restore {str(slot)!r} with its saved passes; it is not "
+                    "regenerated. Only if task-retry was interrupted before publishing it, delete "
+                    f"{str(marker)!r} and rerun annolabel task-retry {quote(path)}.",
+                }
+            entries.append(
+                {
+                    "image": entry.image,
+                    "task": entry.task if marker.exists() else None,
+                    "view": None,
+                    "state": "error",
+                    "objects": None,
+                    "passes_left": None,
+                    **failure,
+                }
+            )
+            continue
         try:
             task = Task(entry.task)
             if task.handle.image != entry.image:
@@ -259,7 +379,7 @@ def _folder_status(path: str, index: FolderTaskIndex) -> dict:
                 {
                     "image": entry.image,
                     "task": entry.task,
-                    "view": entry.view,
+                    "view": getattr(entry, "view", None),
                     "state": "error",
                     "objects": None,
                     "passes_left": None,
@@ -268,10 +388,27 @@ def _folder_status(path: str, index: FolderTaskIndex) -> dict:
             )
     saved = sum(entry["state"] == "saved" for entry in entries)
     errors = any(entry["state"] == "error" for entry in entries)
+    unstarted = sum(entry["state"] == "error" and entry["task"] is None for entry in entries)
+    retry = (
+        f"{unstarted} source(s) could not start; fix each as its recovery says, then run "
+        f"annolabel task-retry {quote(path)}."
+        if unstarted
+        else ""
+    )
     if pending:
-        next_step = _folder_next(pending, path)
-    elif errors:
-        next_step = f"Resolve the per-image errors, then run annolabel task-status {quote(path)}."
+        next_step = " ".join(filter(None, [_folder_next(pending, path), retry]))
+    elif sum(entry["state"] == "error" for entry in entries) > unstarted:
+        next_step = " ".join(
+            filter(
+                None,
+                [
+                    f"Resolve the per-image errors, then run annolabel task-status {quote(path)}.",
+                    retry,
+                ],
+            )
+        )
+    elif retry:
+        next_step = retry
     else:
         next_step = f"annolabel export {quote(index.source)} --output NEW_DATASET"
     return {

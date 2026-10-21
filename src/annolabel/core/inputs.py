@@ -79,3 +79,12 @@ def read_categories(path: str) -> list[str]:
     except ValueError as error:
         details = validation_details(error) if isinstance(error, ValidationError) else [str(error)]
         raise InputError("VALIDATION_ERROR", f"Invalid {source}.", recovery, details) from None
+
+
+def read_rules(instructions: str | None, categories: str | None, geometry: str) -> Rules:
+    """Read researcher rule files once so tasks and packets share them."""
+    return Rules(
+        geometry=geometry,
+        **({"instructions": read_text(instructions, "--instructions")} if instructions else {}),
+        categories=read_categories(categories) if categories else None,
+    )

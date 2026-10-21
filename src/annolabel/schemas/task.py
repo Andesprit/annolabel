@@ -2,9 +2,9 @@
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
-from annolabel.schemas.workflow import ClassificationInput, ObjectInput, StrictModel
+from annolabel.schemas.workflow import ClassificationInput, ObjectInput, Rules, StrictModel
 
 
 class Submission(StrictModel):
@@ -36,10 +36,33 @@ class FolderTaskEntry(StrictModel):
     passes_left: int
 
 
+class FolderStartFailure(StrictModel):
+    """Source that could not start; task names the slot task-retry publishes into."""
+
+    image: str
+    task: str
+    error: str
+    code: str
+    recovery: str
+
+
 class FolderTaskIndex(StrictModel):
-    """Immutable index of independently submittable image tasks."""
+    """Immutable index of every discovered source and its image task slot.
+
+    Rules are frozen at start so task-retry reuses them; legacy indexes omit them.
+    """
 
     version: Literal[1] = 1
     kind: Literal["folder"] = "folder"
     source: str
-    tasks: list[FolderTaskEntry] = Field(min_length=1)
+    rules: Rules | None = None
+    max_passes: int | None = Field(default=None, ge=1, le=2)
+    tasks: list[FolderTaskEntry | FolderStartFailure] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def retry_rules(self) -> "FolderTaskIndex":
+        if (self.rules is None or self.max_passes is None) and any(
+            isinstance(entry, FolderStartFailure) for entry in self.tasks
+        ):
+            raise ValueError("startup failures require the frozen rules and max_passes")
+        return self

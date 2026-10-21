@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from annolabel.core.annolabel import AnnoLabel
 from annolabel.core.export import export_dataset
 from annolabel.core.inputs import parse_json, read_text
-from annolabel.core.task import start_task, submit_task, task_status
+from annolabel.core.task import retry_tasks, start_task, submit_task, task_status
 from annolabel.core.workflow import Workflow
 from annolabel.modules.validation import InputError, validation_details
 
@@ -41,6 +41,11 @@ def _parser() -> argparse.ArgumentParser:
     task.add_argument("--categories")
     task.add_argument("--geometry", choices=["boxes", "polygons", "both"], default="both")
     task.add_argument("--max-passes", type=int, choices=[1, 2], default=2)
+    task.add_argument(
+        "--keep-going",
+        action="store_true",
+        help="Folder only: start healthy images and record sources that fail for task-retry",
+    )
     submit = commands.add_parser(
         "submit", help="Submit classifications and objects against a saved task handle"
     )
@@ -55,6 +60,10 @@ def _parser() -> argparse.ArgumentParser:
         "task-status", help="Recover an image task or report progress from a folder tasks.json"
     )
     status.add_argument("task", help="Image task.json or folder tasks.json")
+    retry = commands.add_parser(
+        "task-retry", help="Start only the folder sources that failed, with the original rules"
+    )
+    retry.add_argument("task", help="Folder tasks.json returned by task FOLDER --keep-going")
     prepare = commands.add_parser(
         "prepare", help="Create agent views, task rules, schema, and an editable snapshot"
     )
@@ -176,6 +185,7 @@ def _recovery(args: argparse.Namespace) -> str:
     return {
         "task": "Correct the named task input and retry annolabel task with a new --output directory.",
         "submit": 'Correct all listed fields in --file and retry the same task handle with a complete snapshot; use "classifications": [] when there are none.',
+        "task-retry": "Pass the folder tasks.json returned by annolabel task FOLDER --keep-going; fix the named source first.",
         "task-status": "Pass the task.json returned by annolabel task, submit, or task-status; restore any missing checkpoint files.",
         "prepare": "Correct the named input or rule and retry annolabel prepare with a new --output directory.",
         "apply": "Correct the complete snapshot in --file and retry; for a stale revision, run annolabel prepare IMAGE --output NEW_DIR and reconcile with its annotations.json.",
@@ -236,7 +246,7 @@ def main() -> None:
     args = None
     try:
         args = _parser().parse_args()
-        if args.command in {"task", "submit", "task-status"}:
+        if args.command in {"task", "submit", "task-status", "task-retry"}:
             if args.command == "task":
                 result = start_task(
                     args.image,
@@ -245,10 +255,13 @@ def main() -> None:
                     categories=args.categories,
                     geometry=args.geometry,
                     max_passes=args.max_passes,
+                    keep_going=args.keep_going,
                 )
             elif args.command == "submit":
                 payload = _payload(args)
                 result = submit_task(args.task, payload, allow_empty=args.allow_empty)
+            elif args.command == "task-retry":
+                result = retry_tasks(args.task)
             else:
                 result = task_status(args.task)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":")))

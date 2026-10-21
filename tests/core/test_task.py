@@ -548,3 +548,220 @@ def test_folder_next_leads_to_pending_image_context(source: Path, tmp_path: Path
     second = Task(initial["tasks"][1]["task"]).status()
     assert second["submission"] in status["next"] and second["next"] in status["next"]
     assert "submission" not in status["tasks"][1]
+
+
+def tree(path: Path) -> dict[str, bytes]:
+    return {
+        str(p.relative_to(path)): p.read_bytes() for p in sorted(path.rglob("*")) if p.is_file()
+    }
+
+
+def mixed_folder(source: Path, tmp_path: Path) -> Path:
+    folder = tmp_path / "café's images"
+    (folder / "nested").mkdir(parents=True)
+    shutil.copyfile(source, folder / "a.png")
+    shutil.copyfile(source, folder / "nested/a.png")
+    (folder / "b.png").write_text("broken image")
+    return folder
+
+
+def test_keep_going_folder_labels_healthy_images_and_retries_fixed_source(
+    source: Path, tmp_path: Path
+) -> None:
+    folder = mixed_folder(source, tmp_path)
+    instructions = tmp_path / "rules.txt"
+    instructions.write_text("Find rectangles")
+    categories = save(tmp_path / "categories.json", ["rectangle"])
+    rules = ["--instructions", instructions, "--categories", categories, "--max-passes", 1]
+    error = cli("task", folder, "-o", tmp_path / "atomic", *rules, success=False)
+    assert error["code"] == "IO_ERROR" and str(folder / "b.png") in error["error"]
+    assert "--keep-going" in error["recovery"] and not (tmp_path / "atomic").exists()
+
+    output = tmp_path / "tasks"
+    initial = cli("task", folder, "-o", output, *rules, "--keep-going")
+    index = Path(initial["index"])
+    assert initial["status"] == "attention" and initial["images"] == 3
+    a, b, nested = initial["tasks"]
+    assert b["image"] == str(folder / "b.png") and b["code"] == "IO_ERROR"
+    assert "task-retry" in b["recovery"] and "view" not in b
+    assert initial["next_task"] == a["task"] and "task-retry" in initial["next"]
+    before = tree(output)
+    status = cli("task-status", index)
+    assert tree(output) == before
+    assert status["status"] == "attention" and status["totals"]["images"] == 3
+    assert [t["state"] for t in status["tasks"]] == ["pending", "error", "pending"]
+    assert "annolabel submit" in status["next"] and "task-retry" in status["next"]
+
+    for item in [a, nested]:
+        cli("submit", item["task"], "--file", save(tmp_path / "s.json", submission()))
+    status = cli("task-status", index)
+    assert status["status"] == "attention" and status["totals"]["saved"] == 2
+    assert status["next"].startswith("1 source(s) could not start")
+    assert "export" not in status["next"]
+    retry = cli("task-retry", index)
+    assert retry["retried"] == [] and retry["next"].startswith("task-retry started nothing")
+    assert retry["tasks"][1]["state"] == "error"
+
+    healthy = {name: tree(output / name) for name in ["000001", "000003"]}
+    sidecars = {p: p.read_bytes() for p in folder.rglob("*.labels.json")}
+    index_bytes = index.read_bytes()
+    shutil.copyfile(source, folder / "b.png")
+    instructions.write_text("Changed rules")
+    categories.unlink()
+    shutil.copyfile(source, folder / "late.png")
+    retry = cli("task-retry", index)
+    assert retry["retried"] == [str(folder / "b.png")] and retry["status"] == "ready"
+    assert retry["next_task"] == str(output / "000002/task.json")
+    assert {name: tree(output / name) for name in healthy} == healthy
+    assert {p: p.read_bytes() for p in sidecars} == sidecars and index.read_bytes() == index_bytes
+    assert len(retry["tasks"]) == 3
+    packet = json.loads((output / "000002/packet.json").read_text())
+    assert packet["rules"] == json.loads((output / "000001/packet.json").read_text())["rules"]
+    assert packet["rules"]["instructions"] == "Find rectangles"
+    assert Task(retry["next_task"]).status()["passes_left"] == 1
+    before = tree(output)
+    assert cli("task-retry", index)["retried"] == [] and tree(output) == before
+
+    cli("submit", retry["next_task"], "--file", save(tmp_path / "s.json", submission()))
+    status = cli("task-status", index)
+    assert status["status"] == "complete" and status["next"].startswith("annolabel export")
+    exported = cli("export", folder, "-o", tmp_path / "dataset")
+    assert exported["images"] == 3 and exported["objects"] == 3
+
+
+@pytest.mark.parametrize("saved", [True, False])
+def test_retry_never_regenerates_a_started_slot(source: Path, tmp_path: Path, saved: bool) -> None:
+    from annolabel.core.task import retry_tasks, task_status
+
+    folder = mixed_folder(source, tmp_path)
+    initial = start_task(str(folder), str(tmp_path / "tasks"), keep_going=True)
+    shutil.copyfile(source, folder / "b.png")
+    task = retry_tasks(initial["index"])["tasks"][1]["task"]
+    if saved:
+        corrected = Task(task).submit(json.dumps(submission()))
+        Task(corrected["task"]).submit(json.dumps({**submission(), "classifications": []}))
+    shutil.rmtree(Path(task).parent)
+    retry = retry_tasks(initial["index"])
+    assert retry["retried"] == [] and not Path(task).parent.exists()
+    entry = task_status(initial["index"])["tasks"][1]
+    assert entry["state"] == "error" and entry["code"] == "TASK_MISSING"
+    assert entry["task"] == task and "not regenerated" in entry["recovery"]
+
+
+@pytest.mark.parametrize("occupant", ["directory", "symlink"])
+def test_retry_does_not_overwrite_an_occupied_slot(
+    source: Path, tmp_path: Path, occupant: str
+) -> None:
+    from annolabel.core.task import retry_tasks
+
+    folder = mixed_folder(source, tmp_path)
+    initial = start_task(str(folder), str(tmp_path / "tasks"), keep_going=True)
+    shutil.copyfile(source, folder / "b.png")
+    slot = tmp_path / "tasks/000002"
+    if occupant == "directory":
+        slot.mkdir()
+        (slot / "keep.txt").write_text("keep")
+    else:
+        slot.symlink_to(tmp_path / "tasks/000001", target_is_directory=True)
+    before = tree(tmp_path / "tasks")
+    retry = retry_tasks(initial["index"])
+    assert retry["retried"] == [] and retry["tasks"][1]["state"] == "error"
+    assert tree(tmp_path / "tasks") == before
+
+
+def test_retry_publication_failure_keeps_earlier_retried_slots(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from annolabel.core import task as task_module
+
+    folder = tmp_path / "images"
+    folder.mkdir()
+    for name in ["a.png", "b.png"]:
+        (folder / name).write_text("broken")
+    initial = start_task(str(folder), str(tmp_path / "tasks"), categories=None, keep_going=True)
+    assert initial["status"] == "attention" and initial["next_task"] is None
+    assert initial["next"].startswith("2 source(s) could not start")
+    for name in ["a.png", "b.png"]:
+        shutil.copyfile(source, folder / name)
+    publish, calls = task_module._publish, []
+
+    def flaky(*args: object) -> dict:
+        calls.append(args)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        return publish(*args)
+
+    monkeypatch.setattr(task_module, "_publish", flaky)
+    with pytest.raises(OSError):
+        task_module.retry_tasks(initial["index"])
+    first = tree(tmp_path / "tasks/000001")
+    assert not (tmp_path / "tasks/000002").exists()
+    assert not (tmp_path / "tasks/retries/000002.json").exists()
+    monkeypatch.setattr(task_module, "_publish", publish)
+    assert task_module.retry_tasks(initial["index"])["retried"] == [str(folder / "b.png")]
+    assert tree(tmp_path / "tasks/000001") == first
+
+
+def test_start_publication_failure_cleans_up(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from annolabel.core import task as task_module
+
+    folder = mixed_folder(source, tmp_path)
+
+    def fail(*args: object) -> dict:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(task_module, "_publish", fail)
+    with pytest.raises(OSError):
+        start_task(str(folder), str(tmp_path / "tasks"), keep_going=True)
+    assert not (tmp_path / "tasks").exists()
+
+
+def test_retry_freezes_empty_category_list(source: Path, tmp_path: Path) -> None:
+    from annolabel.core.task import retry_tasks
+
+    folder = mixed_folder(source, tmp_path)
+    categories = save(tmp_path / "categories.json", [])
+    initial = start_task(
+        str(folder), str(tmp_path / "tasks"), categories=str(categories), keep_going=True
+    )
+    categories.unlink()
+    shutil.copyfile(source, folder / "b.png")
+    retry_tasks(initial["index"])
+    packet = json.loads((tmp_path / "tasks/000002/packet.json").read_text())
+    assert packet["rules"]["categories"] == []
+
+
+def test_shared_inputs_and_index_errors_are_actionable(source: Path, tmp_path: Path) -> None:
+    folder = mixed_folder(source, tmp_path)
+    error = cli(
+        "task",
+        folder,
+        "-o",
+        tmp_path / "t",
+        "--keep-going",
+        "--categories",
+        tmp_path / "no.json",
+        success=False,
+    )
+    assert "--categories" in error["error"] and not (tmp_path / "t").exists()
+    error = cli("task", source, "-o", tmp_path / "t", "--keep-going", success=False)
+    assert "folders" in error["error"] and not (tmp_path / "t").exists()
+    single = cli("task", source, "-o", tmp_path / "single")
+    error = cli("task-retry", single["task"], success=False)
+    assert error["code"] == "FOLDER_INDEX_REQUIRED"
+
+    initial = start_task(str(folder), str(tmp_path / "tasks"), keep_going=True)
+    index = Path(initial["index"])
+    data = json.loads(index.read_text())
+    # A legacy index has no frozen rules; with only started entries retry is a no-op.
+    legacy = {k: v for k, v in data.items() if k not in {"rules", "max_passes"}}
+    save(index, {**legacy, "tasks": [data["tasks"][0]]})
+    retry = cli("task-retry", index)
+    assert retry["retried"] == [] and retry["status"] == "ready"
+    for broken in [legacy, {**data, "tasks": [{**data["tasks"][1], "code": None}]}]:
+        save(index, broken)
+        for command in ["task-retry", "task-status"]:
+            error = cli(command, index, success=False)
+            assert error["code"] == "VALIDATION_ERROR" and "tasks.json" in error["recovery"]
