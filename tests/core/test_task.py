@@ -14,6 +14,16 @@ from tests.helpers import cli, save
 CONTEXT = {"guide", "submission", "next"}
 
 
+def assert_lean_bundle(reply: dict) -> None:
+    """A short checkpoint holds only its two source-sized PNGs, and every path it names exists."""
+    bundle = Path(reply["task"]).parent
+    assert sorted(p.name for p in bundle.glob("*.png")) == ["original.png", "view.png"]
+    views = json.loads((bundle / "packet.json").read_text())["views"]
+    assert [v["id"] for v in views] == ["original", "view"]
+    assert all(Path(v["path"]).exists() for v in views)
+    assert all(Path(reply[key]).exists() for key in ["task", "view", "guide", "submission"])
+
+
 def submission() -> dict:
     return {
         "classifications": [{"label": "shapes"}],
@@ -255,6 +265,8 @@ def test_short_task_two_passes_recovery_retry_and_export(source: Path, tmp_path:
         json.loads((Path(v["view"]).parent / "packet.json").read_text())
         for v in [initial, first, second]
     ]
+    for reply in [initial, first, second]:
+        assert_lean_bundle(reply)
     for packet in packets:
         view = next(v for v in packet["views"] if v["id"] == "view")
         assert (
@@ -297,6 +309,8 @@ def test_short_view_exif_orientation_and_edge_coordinates(tmp_path: Path) -> Non
     with Image.open(saved["view"]) as view:
         assert view.size == (60, 100)
         assert view.getpixel((0, 50)) != oriented.getpixel((0, 50))
+    assert_lean_bundle(initial)
+    assert_lean_bundle(saved)
 
 
 def test_invalid_submission_and_external_edit_leave_task_unchanged(
@@ -530,6 +544,33 @@ def test_legacy_bundle_without_working_copy_keeps_old_replies(source: Path, tmp_
     first = Task(initial["task"]).submit(json.dumps(submission()))
     assert set(first) == core | {"changes"} | CONTEXT
     assert set(Task(initial["task"]).submit(json.dumps(submission()))) == set(first)
+
+
+def test_legacy_packet_panels_still_convert_and_drive_detailed_review(
+    source: Path, tmp_path: Path
+) -> None:
+    initial = start_task(str(source), str(tmp_path / "task"))
+    bundle = Path(initial["task"]).parent
+    # Bundles written before short tasks dropped it also listed a padded grid panel.
+    old = json.loads(Path(cli("prepare", source, "-o", tmp_path / "old")["packet"]).read_text())
+    grid = next(v for v in old["views"] if v["id"] == "grid")
+    packet = json.loads((bundle / "packet.json").read_text())
+    packet["views"] = [v for v in packet["views"] if v["id"] != "grid"] + [grid]
+    (bundle / "packet.json").write_text(json.dumps(packet))
+    x, y = grid["content_rect"][:2]
+    payload = submission()
+    payload["objects"][0]["view_id"] = "grid"
+    payload["objects"][0]["polygon"] = [
+        [px + x, py + y] for px, py in submission()["objects"][0]["polygon"]
+    ]
+    first = Task(initial["task"]).submit(json.dumps(payload))
+    saved = json.loads((Path(first["task"]).parent / "annotations.json").read_text())
+    assert saved["objects"][0]["polygon"] == submission()["objects"][0]["polygon"]
+    review = cli("review", source, "--packet", bundle / "packet.json", "-o", tmp_path / "review")
+    assert review["rules"] == packet["rules"]
+    assert Path(review["overview"]).exists() and all(
+        map(Path.exists, map(Path, review["review_pages"]))
+    )
 
 
 def test_folder_next_leads_to_pending_image_context(source: Path, tmp_path: Path) -> None:

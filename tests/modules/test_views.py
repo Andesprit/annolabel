@@ -1,5 +1,6 @@
 """Bundle staging cleans up after filesystem failures."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,3 +21,22 @@ def test_failed_publish_removes_staged_views(document: Document, tmp_path: Path)
             )
     assert not output.exists()
     assert not list(tmp_path.glob(".annolabel-views-*"))
+
+
+def test_short_bundle_omits_unused_panels_and_says_so(document: Document, tmp_path: Path) -> None:
+    image = Image.new("RGB", (100, 80), "white")
+    short = write_bundle(
+        image, document, str(tmp_path / "short"), rules=Rules(), prepare=True, short=True
+    )
+    assert short["overview"] is None and short["grid"] is None and short["review_pages"] == []
+    assert sorted(p.name for p in (tmp_path / "short").glob("*.png")) == [
+        "original.png",
+        "view.png",
+    ]
+    detailed = write_bundle(
+        image, document, str(tmp_path / "detailed"), rules=Rules(), prepare=True
+    )
+    assert Path(detailed["overview"]).exists() and Path(detailed["grid"]).exists()
+    for bundle in [short, detailed]:
+        views = json.loads(Path(bundle["packet"]).read_text())["views"]
+        assert all(Path(v["path"]).exists() for v in views)

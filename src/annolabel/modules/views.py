@@ -156,7 +156,7 @@ def write_bundle(
                     content_rect=rect,
                 )
             )
-        if prepare:
+        if prepare and not short:
             _ruler(image, rect, "Original oriented pixels: x right, y down", grid=True).save(
                 temporary / "grid.png"
             )
@@ -173,40 +173,46 @@ def write_bundle(
                     ),
                 )
             )
-        overview = _ruler(
-            _outlined(image, document),
-            rect,
-            "Overview: thin boxes and polygons; coordinates are ORIGINAL pixels",
-        )
-        legend = [f"{i + 1}. {obj['key']}: {obj['label']}" for i, obj in enumerate(objects)]
-        legend_lines = [
-            (i, line)
-            for i, label in enumerate(legend)
-            for line in textwrap.wrap(label, max(30, overview.width // 9))
-        ]
-        page = Image.new(
-            "RGB",
-            (overview.width, overview.height + max(30, len(legend_lines) * 22 + 12)),
-            "#101827",
-        )
-        page.paste(overview, (0, 0))
-        draw = ImageDraw.Draw(page)
-        for line_no, (obj_no, line) in enumerate(legend_lines):
-            draw.text(
-                (10, overview.height + 6 + line_no * 22),
-                line,
-                font=_font(),
-                fill=COLORS[obj_no % len(COLORS)],
+        if not short:
+            overview = _ruler(
+                _outlined(image, document),
+                rect,
+                "Overview: thin boxes and polygons; coordinates are ORIGINAL pixels",
             )
-        page.save(temporary / "overview.png")
-        packet.views.append(
-            View(
-                id="overview",
-                path=str(destination / "overview.png"),
-                source_rect=rect,
-                content_rect=(MARGIN_X, MARGIN_Y, MARGIN_X + image.width, MARGIN_Y + image.height),
+            legend = [f"{i + 1}. {obj['key']}: {obj['label']}" for i, obj in enumerate(objects)]
+            legend_lines = [
+                (i, line)
+                for i, label in enumerate(legend)
+                for line in textwrap.wrap(label, max(30, overview.width // 9))
+            ]
+            page = Image.new(
+                "RGB",
+                (overview.width, overview.height + max(30, len(legend_lines) * 22 + 12)),
+                "#101827",
             )
-        )
+            page.paste(overview, (0, 0))
+            draw = ImageDraw.Draw(page)
+            for line_no, (obj_no, line) in enumerate(legend_lines):
+                draw.text(
+                    (10, overview.height + 6 + line_no * 22),
+                    line,
+                    font=_font(),
+                    fill=COLORS[obj_no % len(COLORS)],
+                )
+            page.save(temporary / "overview.png")
+            packet.views.append(
+                View(
+                    id="overview",
+                    path=str(destination / "overview.png"),
+                    source_rect=rect,
+                    content_rect=(
+                        MARGIN_X,
+                        MARGIN_Y,
+                        MARGIN_X + image.width,
+                        MARGIN_Y + image.height,
+                    ),
+                )
+            )
         for start in range(0, len(selected), per_page):
             rows = []
             page_views = []
@@ -339,8 +345,8 @@ def write_bundle(
         "output": str(destination),
         "packet": str(destination / "packet.json"),
         "original": str(destination / "original.png"),
-        "overview": str(destination / "overview.png"),
-        "grid": str(destination / "grid.png") if prepare else None,
+        "overview": None if short else str(destination / "overview.png"),
+        "grid": str(destination / "grid.png") if prepare and not short else None,
         "review_pages": pages,
         "annotations_file": str(destination / "annotations.json"),
         "schema": str(destination / "schema.json"),
