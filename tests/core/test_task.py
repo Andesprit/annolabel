@@ -765,3 +765,31 @@ def test_shared_inputs_and_index_errors_are_actionable(source: Path, tmp_path: P
         for command in ["task-retry", "task-status"]:
             error = cli(command, index, success=False)
             assert error["code"] == "VALIDATION_ERROR" and "tasks.json" in error["recovery"]
+
+
+def test_retry_interrupted_after_publication_keeps_its_history(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from annolabel.core import task as task_module
+
+    folder = mixed_folder(source, tmp_path)
+    initial = start_task(str(folder), str(tmp_path / "tasks"), keep_going=True)
+    shutil.copyfile(source, folder / "b.png")
+    publish = task_module._publish
+
+    def interrupted(*args: object) -> dict:
+        publish(*args)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(task_module, "_publish", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        task_module.retry_tasks(initial["index"])
+    monkeypatch.setattr(task_module, "_publish", publish)
+    slot = tmp_path / "tasks/000002"
+    assert (tmp_path / "tasks/retries/000002.json").exists()
+    saved = Task(str(slot / "task.json")).submit(json.dumps(submission()))
+    Task(saved["task"]).submit(json.dumps({**submission(), "classifications": []}))
+    shutil.move(slot, tmp_path / "backup")
+    retry = task_module.retry_tasks(initial["index"])
+    assert retry["retried"] == [] and not slot.exists()
+    assert retry["tasks"][1]["code"] == "TASK_MISSING"

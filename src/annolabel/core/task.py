@@ -245,7 +245,9 @@ def retry_tasks(path: str) -> dict:
         try:
             _publish(workflow, slot, index.rules, index.max_passes)
         except BaseException:
-            marker.unlink()
+            # Forget the attempt only if the slot was never published (the rename is atomic).
+            if not (slot.exists() or slot.is_symlink()):
+                marker.unlink()
             raise
         retried.append(entry.image)
     status = _folder_status(path, index)
