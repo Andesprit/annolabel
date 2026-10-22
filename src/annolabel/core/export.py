@@ -1,10 +1,12 @@
 """Resolve source files and invoke the default dataset exporter."""
 
-import json
 from pathlib import Path
+from shlex import quote
 
 from annolabel.core.annolabel import AnnoLabel
+from annolabel.core.inputs import read_categories
 from annolabel.modules.coco import export_coco
+from annolabel.modules.validation import InputError
 from annolabel.services.images.base import ImageServiceBase
 from annolabel.services.images.local import LocalImageService
 
@@ -30,10 +32,16 @@ def export_dataset(
         suffix = ".labels.json"
         sources = [p.with_name(p.name[: -len(suffix)]) for p in sorted(path.rglob("*" + suffix))]
         if not sources:
-            raise ValueError("no annotation sidecars found in input directory")
+            raise InputError(
+                "NO_ANNOTATIONS",
+                f"No annotation sidecars found in input directory {str(path)!r}.",
+                f"Run annolabel task IMAGE --output NEW_TASK and annolabel submit TASK_JSON --file ANNOTATIONS_JSON "
+                f"for the images in {str(path)!r}, then retry annolabel export {quote(str(path))} --output NEW_DATASET.",
+            )
     else:
         sources = [path]
     items = []
+    warnings = []
     seen = set()
     for image_path in sources:
         resolved = image_path.resolve(strict=True)
@@ -41,10 +49,22 @@ def export_dataset(
             continue
         seen.add(resolved)
         kit = AnnoLabel(str(resolved), image_service=service)
+        if not kit.sidecar.exists():
+            raise InputError(
+                "NO_ANNOTATIONS",
+                f"No annotation sidecar found for input image {str(resolved)!r}.",
+                f"Run annolabel task {quote(str(resolved))} --output NEW_TASK, then "
+                "annolabel submit TASK_JSON --file ANNOTATIONS_JSON before exporting. "
+                "For an image with no objects, submit a snapshot with objects: [].",
+            )
+        if not any(a.kind != "label" for a in kit.document.annotations):
+            warnings.append(
+                f"Exported image {str(resolved)!r} with zero objects; whole-image classifications "
+                "were preserved. Review this image before using the dataset for training."
+            )
         items.append((kit.path, kit.document))
-    categories = None
-    if categories_file:
-        categories = json.loads(Path(categories_file).expanduser().read_text())
-        if not isinstance(categories, list):
-            raise ValueError("categories file must contain a JSON array of label names")
-    return export_coco(items, output, categories, image_service=service)
+    categories = read_categories(categories_file) if categories_file else None
+    result = export_coco(items, output, categories, image_service=service)
+    if warnings:
+        result["warnings"] = warnings
+    return result

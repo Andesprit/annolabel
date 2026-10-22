@@ -70,7 +70,18 @@ annolabel submit task/task.json --file shapes-submission.json
 annolabel export shapes.png --output dataset
 ```
 
-Open `task/pass1/view.png` to review the result. The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
+Here the example file stands in for the agent's work. In real use, read the returned `guide`, open the `view`, edit the returned `submission` file (it already holds any saved labels) and run the `submit` command named in `next`. Open `task/pass1/view.png` to review the result. Before a risky correction, `annolabel preview TASK_JSON --file JSON --output NEW_DIR` shows the candidate and any removed objects without saving or using a pass; see [preview a risky correction](docs/usage.md#preview-a-risky-correction-optional). The export contains `annotations/instances_default.json`, oriented images, scene classifications, and provenance. The supplied coordinates belong only to this example. Output directories must be new; use fresh names when repeating it.
+
+For a folder, start once and check progress:
+
+```sh
+annolabel task /data/images --output /data/work/image-tasks
+annolabel task-status /data/work/image-tasks/tasks.json
+```
+
+Follow `next`: it names the pending image's guide, view, editable `submission` file and exact `submit` command. Status names the next handle and, when all images are saved, the exact export command. If one image cannot be opened, the folder start stops and creates nothing; add `--keep-going` to start the healthy images, then fix the named file and run `annolabel task-retry /data/work/image-tasks/tasks.json`. Status can exit 0 with `status: attention`: read it before exporting. Keep loose previews and masks outside the source folder. See the [folder workflow](docs/usage.md#label-folders-and-batch-agent-work).
+
+Before training, `annolabel audit /data/images --output /data/work/audit-1` can check the whole folder without changing it. It lists unannotated and broken images, counts every label exactly as written, draws overview pages and lists noted objects and scene classes with a focused review command each. Add `--categories labels.json` to list every saved object whose label is outside your object list. See [check a folder before export](docs/usage.md#check-a-folder-before-export-optional).
 
 ## Learn more
 

@@ -43,16 +43,6 @@ class Batch(StrictModel):
     classifications: list[ClassificationInput]
     objects: list[ObjectInput]
 
-    @model_validator(mode="after")
-    def unique_keys(self) -> "Batch":
-        keys = [obj.key for obj in self.objects]
-        if len(keys) != len(set(keys)):
-            raise ValueError("object keys must be unique")
-        labels = [c.label for c in self.classifications]
-        if len(labels) != len(set(labels)):
-            raise ValueError("classification labels must be unique")
-        return self
-
 
 class Rules(StrictModel):
     """Researcher instructions plus machine-checkable object requirements."""

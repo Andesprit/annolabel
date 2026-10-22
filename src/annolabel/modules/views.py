@@ -11,7 +11,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from annolabel.modules.batch import snapshot
+from annolabel.modules.validation import InputError
 from annolabel.schemas.annotations import Document
+from annolabel.schemas.task import Submission
 from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
 MARGIN_X, MARGIN_Y = 58, 50
@@ -97,7 +99,11 @@ def write_bundle(
         raise ValueError("per_page must be 1..4 and padding must be > 0 and <= 2")
     destination = Path(output).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
-        raise ValueError("view output already exists; choose a new directory")
+        raise InputError(
+            "OUTPUT_EXISTS",
+            f"Output directory already exists: {str(destination)!r}.",
+            "Pass a new directory with --output; the existing directory was not replaced.",
+        )
     if regions is not None and len({r.key for r in regions}) != len(regions):
         raise ValueError("region keys must be unique")
     selected = []
@@ -150,7 +156,7 @@ def write_bundle(
                     content_rect=rect,
                 )
             )
-        if prepare:
+        if prepare and not short:
             _ruler(image, rect, "Original oriented pixels: x right, y down", grid=True).save(
                 temporary / "grid.png"
             )
@@ -167,40 +173,46 @@ def write_bundle(
                     ),
                 )
             )
-        overview = _ruler(
-            _outlined(image, document),
-            rect,
-            "Overview: thin boxes and polygons; coordinates are ORIGINAL pixels",
-        )
-        legend = [f"{i + 1}. {obj['key']}: {obj['label']}" for i, obj in enumerate(objects)]
-        legend_lines = [
-            (i, line)
-            for i, label in enumerate(legend)
-            for line in textwrap.wrap(label, max(30, overview.width // 9))
-        ]
-        page = Image.new(
-            "RGB",
-            (overview.width, overview.height + max(30, len(legend_lines) * 22 + 12)),
-            "#101827",
-        )
-        page.paste(overview, (0, 0))
-        draw = ImageDraw.Draw(page)
-        for line_no, (obj_no, line) in enumerate(legend_lines):
-            draw.text(
-                (10, overview.height + 6 + line_no * 22),
-                line,
-                font=_font(),
-                fill=COLORS[obj_no % len(COLORS)],
+        if not short:
+            overview = _ruler(
+                _outlined(image, document),
+                rect,
+                "Overview: thin boxes and polygons; coordinates are ORIGINAL pixels",
             )
-        page.save(temporary / "overview.png")
-        packet.views.append(
-            View(
-                id="overview",
-                path=str(destination / "overview.png"),
-                source_rect=rect,
-                content_rect=(MARGIN_X, MARGIN_Y, MARGIN_X + image.width, MARGIN_Y + image.height),
+            legend = [f"{i + 1}. {obj['key']}: {obj['label']}" for i, obj in enumerate(objects)]
+            legend_lines = [
+                (i, line)
+                for i, label in enumerate(legend)
+                for line in textwrap.wrap(label, max(30, overview.width // 9))
+            ]
+            page = Image.new(
+                "RGB",
+                (overview.width, overview.height + max(30, len(legend_lines) * 22 + 12)),
+                "#101827",
             )
-        )
+            page.paste(overview, (0, 0))
+            draw = ImageDraw.Draw(page)
+            for line_no, (obj_no, line) in enumerate(legend_lines):
+                draw.text(
+                    (10, overview.height + 6 + line_no * 22),
+                    line,
+                    font=_font(),
+                    fill=COLORS[obj_no % len(COLORS)],
+                )
+            page.save(temporary / "overview.png")
+            packet.views.append(
+                View(
+                    id="overview",
+                    path=str(destination / "overview.png"),
+                    source_rect=rect,
+                    content_rect=(
+                        MARGIN_X,
+                        MARGIN_Y,
+                        MARGIN_X + image.width,
+                        MARGIN_Y + image.height,
+                    ),
+                )
+            )
         for start in range(0, len(selected), per_page):
             rows = []
             page_views = []
@@ -258,7 +270,7 @@ def write_bundle(
         (temporary / "packet.json").write_text(packet.model_dump_json(indent=2) + "\n")
         (temporary / "annotations.json").write_text(json.dumps(snapshot(document), indent=2) + "\n")
         (temporary / "schema.json").write_text(
-            json.dumps(Batch.model_json_schema(), indent=2) + "\n"
+            json.dumps((Submission if short else Batch).model_json_schema(), indent=2) + "\n"
         )
         guide = (
             "You supply visual interpretation; AnnoLabel never runs inference.\n"
@@ -279,17 +291,40 @@ def write_bundle(
             "Validation is geometric, not a claim of visual accuracy. Report unresolved uncertainty; do not claim pixel-perfect output.\n"
         )
         if short:
+            if rules.categories is None:
+                labels = "any label (unrestricted)"
+            elif not rules.categories:
+                labels = "none; this task allows no objects"
+            else:
+                labels = "only " + json.dumps(rules.categories, ensure_ascii=False)
             guide = (
                 "You supply visual interpretation; AnnoLabel never runs inference.\n"
                 f"Open view.png: {image.width} x {image.height} EXIF-oriented source pixels, with no padding, grid or resizing.\n"
                 "The top-left image corner is (0,0); x increases right and y down. Use source pixels, not resized viewer pixels.\n"
-                "Submit task.json --file JSON_OR_- with classifications and objects as a COMPLETE snapshot.\n"
-                "Each object needs a stable unique key, label, and box [x1,y1,x2,y2] and/or polygon [[x,y],...].\n"
-                "A polygon alone gets its enclosing box. Trace ordered boundary vertices without repeating the first point.\n"
+                "\nResearcher instructions:\n"
+                f"{rules.instructions.strip()}\n"
+                f"\nObject labels: {labels}.\n"
+                "Scene classifications are whole-image labels; they are not restricted by the object labels.\n"
+                f"Geometry: {rules.geometry}. "
+                + (
+                    "Each object needs a box [x1,y1,x2,y2] or a polygon [[x,y],...].\n"
+                    if rules.geometry == "boxes"
+                    else "Each object needs a polygon [[x,y],...]; a missing box is derived from it.\n"
+                )
+                + "\nEdit submission.json, then submit it: annolabel submit task.json --file submission.json\n"
+                "submission.json starts as the saved state of this checkpoint, in submit format (schema.json).\n"
+                "It is a working copy: edits there are UNSAVED until submit succeeds, and editing it never changes\n"
+                "saved annotations. task-status reports saved counts and handles, not this file's contents.\n"
+                "Submit a COMPLETE snapshot: omitted objects and classifications are removed.\n"
+                "Each object needs a stable unique key and a label. Trace ordered boundary vertices without repeating the first point.\n"
                 "The task handle manages hashes and revisions; do not copy them into submissions.\n"
-                "Open the returned view to review outlines in the same source coordinate frame. Keep all unchanged objects\n"
-                "when correcting with the new task handle. If a response is lost, use task-status on the initial handle.\n"
+                "Open the returned view to review outlines in the same source coordinate frame. Correct only if needed,\n"
+                "keeping unchanged objects, with the new task handle. If a response is lost, use task-status on the initial handle.\n"
                 "Use note for uncertainty. Validation checks geometry, not visual accuracy.\n"
+            )
+            fields = ("classifications", "objects")
+            (temporary / "submission.json").write_text(
+                json.dumps({key: snapshot(document)[key] for key in fields}, indent=2) + "\n"
             )
         (temporary / "guide.txt").write_text(guide)
         for name, data in (extra_files or {}).items():
@@ -297,7 +332,11 @@ def write_bundle(
                 raise ValueError("extra bundle files must use unique plain filenames")
             (temporary / name).write_text(json.dumps(data, indent=2) + "\n")
         if destination.exists() or destination.is_symlink():
-            raise ValueError("view output appeared while rendering")
+            raise InputError(
+                "OUTPUT_EXISTS",
+                f"Output directory appeared while writing: {str(destination)!r}.",
+                "Pass a new directory with --output; the existing directory was not replaced.",
+            )
         os.rename(temporary, destination)
     finally:
         if temporary.exists():
@@ -306,8 +345,8 @@ def write_bundle(
         "output": str(destination),
         "packet": str(destination / "packet.json"),
         "original": str(destination / "original.png"),
-        "overview": str(destination / "overview.png"),
-        "grid": str(destination / "grid.png") if prepare else None,
+        "overview": None if short else str(destination / "overview.png"),
+        "grid": str(destination / "grid.png") if prepare and not short else None,
         "review_pages": pages,
         "annotations_file": str(destination / "annotations.json"),
         "schema": str(destination / "schema.json"),
@@ -320,3 +359,87 @@ def write_bundle(
         "object_count": len(objects),
         "coordinates": "Original EXIF-oriented pixels by default. Read printed ruler values, not scaled viewer coordinates.",
     }
+
+
+def _dashed(draw: ImageDraw.ImageDraw, points: list) -> None:
+    """Closed dashed white line on a solid black under-stroke, readable on any pixels."""
+    path = points + points[:1]
+    draw.line(path, fill="black", width=5, joint="curve")
+    for (x1, y1), (x2, y2) in zip(path, path[1:]):
+        length = max(math.hypot(x2 - x1, y2 - y1), 1)
+        for start in range(0, math.ceil(length), 14):
+            a, b = start / length, min(start + 8, length) / length
+            draw.line(
+                (x1 + (x2 - x1) * a, y1 + (y2 - y1) * a, x1 + (x2 - x1) * b, y1 + (y2 - y1) * b),
+                fill="white",
+                width=3,
+            )
+
+
+def _removals(image: Image.Image, candidate: Document, removed: Document) -> Image.Image:
+    """Candidate outlines plus dashed removed saved geometry, with a legend strip below."""
+    view = _outlined(image, candidate)
+    draw = ImageDraw.Draw(view)
+    labelled = set()
+    for a in removed.annotations:
+        if a.kind == "box":
+            (x1, y1), (x2, y2) = a.points
+            corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+        elif a.kind == "polygon":
+            corners = [tuple(point) for point in a.points]
+        else:
+            continue
+        _dashed(draw, corners)
+        if a.object_id not in labelled:
+            labelled.add(a.object_id)
+            x, y = min(p[0] for p in corners), min(p[1] for p in corners)
+            text = f"REMOVED: {a.object_id}"
+            box = draw.textbbox((x + 3, y + 3), text, font=_font(13))
+            draw.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), fill="black")
+            draw.text((x + 3, y + 3), text, font=_font(13), fill="white")
+    legend = textwrap.wrap(
+        "DIAGNOSTIC ONLY: dashed white outlines are saved objects this candidate REMOVES; "
+        "they will not be kept. Solid outlines are the candidate.",
+        max(30, image.width // 8),
+    )
+    page = Image.new("RGB", (image.width, image.height + 10 + 18 * len(legend)), "#101827")
+    page.paste(view, (0, 0))
+    draw = ImageDraw.Draw(page)
+    for line_no, line in enumerate(legend):
+        draw.text((6, image.height + 5 + 18 * line_no), line, font=_font(13), fill="white")
+    return page
+
+
+def write_preview(
+    image: Image.Image,
+    candidate: Document,
+    removed: Document | None,
+    output: Path,
+    texts: dict[str, str],
+) -> None:
+    """Publish a read-only candidate preview: view.png, optional changes.png and texts."""
+    if output.exists() or output.is_symlink():
+        raise InputError(
+            "OUTPUT_EXISTS",
+            f"Output directory already exists: {str(output)!r}.",
+            "Pass a new directory with --output; the existing directory was not replaced.",
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".annolabel-preview-", dir=output.parent))
+    try:
+        _outlined(image, candidate).save(temporary / "view.png")
+        if removed is not None:
+            _removals(image, candidate, removed).save(temporary / "changes.png")
+        for name, text in texts.items():
+            (temporary / name).write_text(text)
+            (temporary / name).chmod(0o444)
+        if output.exists() or output.is_symlink():
+            raise InputError(
+                "OUTPUT_EXISTS",
+                f"Output directory appeared while writing: {str(output)!r}.",
+                "Pass a new directory with --output; the existing directory was not replaced.",
+            )
+        os.rename(temporary, output)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)

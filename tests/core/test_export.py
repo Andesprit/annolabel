@@ -43,6 +43,7 @@ def test_linked_object_exports_once_and_classification_is_separate(tmp_path: Pat
     output = tmp_path / "dataset"
     result = cli("export", source, "--output", output)
     assert result["format"] == "coco" and result["objects"] == 1 and result["classifications"] == 1
+    assert "warnings" not in result
     coco = read_coco(output)
     assert coco["categories"] == [{"id": 1, "name": "triangle", "supercategory": ""}]
     assert coco["annotations"] == [
@@ -174,12 +175,45 @@ def test_bad_vocabulary_leaves_no_partial_export(tmp_path: Path, vocabulary: obj
     assert not output.exists()
 
 
-def test_empty_images_and_stale_sources(tmp_path: Path) -> None:
+def test_image_without_sidecar_is_not_exported(tmp_path: Path) -> None:
+    source = source_at(tmp_path / "unlabeled image.png")
+    output = tmp_path / "dataset"
+    error = cli("export", source, "-o", output, success=False)
+    assert error["code"] == "NO_ANNOTATIONS"
+    assert str(source) in error["error"]
+    assert "task" in error["recovery"] and "submit" in error["recovery"]
+    assert not output.exists()
+    assert not Path(str(source) + ".labels.json").exists()
+
+
+@pytest.mark.parametrize("folder", [False, True])
+@pytest.mark.parametrize("classifications", [[], [{"label": "empty scene"}]])
+def test_zero_object_sidecar_exports_with_warning(
+    tmp_path: Path, folder: bool, classifications: list[dict]
+) -> None:
     source = source_at(tmp_path / "photo.png")
+    task = cli("task", source, "-o", tmp_path / "task")
+    cli(
+        "submit",
+        task["task"],
+        "--file",
+        "-",
+        stdin=json.dumps({"classifications": classifications, "objects": []}),
+    )
+    sidecar = Path(str(source) + ".labels.json")
+    before = sidecar.read_bytes()
     output = tmp_path / "empty"
-    cli("export", source, "-o", output)
+    result = cli("export", tmp_path if folder else source, "-o", output)
+    assert result["objects"] == 0 and result["classifications"] == len(classifications)
+    assert str(source) in result["warnings"][0]
+    assert "zero objects" in result["warnings"][0]
+    assert sidecar.read_bytes() == before
     assert len(read_coco(output)["images"]) == 1
     assert read_coco(output)["annotations"] == []
+
+
+def test_stale_source_is_not_exported(tmp_path: Path) -> None:
+    source = source_at(tmp_path / "photo.png")
     cli("box", source, "--label", "car", "--xyxy", 0, 0, 10, 10)
     Image.new("RGB", (100, 80), "black").save(source)
     cli("export", source, "-o", tmp_path / "stale", success=False)
@@ -189,6 +223,7 @@ def test_empty_images_and_stale_sources(tmp_path: Path) -> None:
 def test_injected_reader_failure_during_export_leaves_no_dataset(
     source: Path, tmp_path: Path
 ) -> None:
+    cli("label", source, "--label", "scene")
     service = create_autospec(ImageServiceBase, instance=True)
     service.load.side_effect = [
         LocalImageService().load(source),
