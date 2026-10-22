@@ -16,7 +16,7 @@ from annolabel.core.task import start_task
 from annolabel.modules.overview import PAGE_MAX_H, PAGE_W
 from annolabel.modules.validation import InputError
 from annolabel.schemas.audit import AuditReport
-from tests.helpers import cli
+from tests.helpers import cli, save
 
 
 def image(path: Path, size: tuple[int, int] = (100, 80)) -> Path:
@@ -142,6 +142,39 @@ def test_actions_quote_paths_and_pages_stay_bounded(tmp_path: Path) -> None:
     for action in source["actions"].values():
         assert shlex.split(action)[2] == str(saved.resolve())
     assert report["object_labels"] == {"très": 1}
+
+
+def test_ordinary_correct_action_saves_label_only_edit_of_box_only_object(tmp_path: Path) -> None:
+    folder = tmp_path / "images"
+    boxed = AnnoLabel(str(image(folder / "box.png")))
+    boxed.annotate("box", "Rectangle", [(10, 10), (60, 50)])
+    boxed.annotate("label", "outdoor", [])
+    AnnoLabel(str(image(folder / "seg.png"))).annotate(
+        "polygon", "leaf", [(5, 5), (30, 5), (30, 30)]
+    )
+    image(folder / "new.png")
+    before = cli("info", folder / "box.png")["annotations"]
+    reply = audit_folder(str(folder), str(tmp_path / "audit"))
+    actions = {
+        s["image"]: s["actions"] for s in json.loads(Path(reply["report"]).read_text())["sources"]
+    }
+    # Sources whose objects all have polygons, and unannotated sources, keep the default rule.
+    assert "--geometry" not in actions["seg.png"]["correct"]
+    assert "--geometry" not in actions["new.png"]["label"]
+
+    argv = [
+        str(tmp_path / "task") if a == "NEW_TASK_DIR" else a
+        for a in shlex.split(actions["box.png"]["correct"])
+    ]
+    task = cli(*argv[1:])
+    snapshot = json.loads(Path(task["submission"]).read_text())
+    snapshot["objects"][0]["label"] = "rectangle"
+    saved = cli("submit", task["task"], "--file", save(Path(task["submission"]), snapshot))
+    assert saved["status"] == "saved"
+    after = cli("info", folder / "box.png")["annotations"]
+    keep = lambda rows: {a["id"]: (a["kind"], a.get("object_id"), a["points"]) for a in rows}  # noqa: E731
+    assert keep(after) == keep(before)
+    assert sorted(a["label"] for a in after) == ["outdoor", "rectangle"]
 
 
 def test_exif_orientation_matches_saved_coordinates(tmp_path: Path) -> None:

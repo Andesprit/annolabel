@@ -184,9 +184,13 @@ def _inspect(
         for a in document.annotations
         if a.kind == "label"
     ]
+    # The default rule requires polygons; boxes keeps saved box-only objects submittable.
+    boxes = any("polygon" not in o.geometry for o in objects)
     actions = {
         "review": review,
-        "correct": task,
+        "correct": f"annolabel task {quote(str(image))} --geometry boxes --output NEW_TASK_DIR"
+        if boxes
+        else task,
     }
     source = AuditSource(
         **base,

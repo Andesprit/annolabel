@@ -44,7 +44,6 @@ class Batch(StrictModel):
     objects: list[ObjectInput]
 
 
-
 class Rules(StrictModel):
     """Researcher instructions plus machine-checkable object requirements."""
 
