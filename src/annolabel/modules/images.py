@@ -1,8 +1,27 @@
 """Annotation overlays and masks on in-memory pixels; no inference models."""
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from annolabel.schemas.annotations import Document
+
+COLORS = ["#f43f5e", "#00a6ff", "#f59e0b", "#16a34a", "#a855f7", "#06b6d4"]
+
+
+def label_color(label: str, document: Document, categories: list[str] | None = None) -> str:
+    """Give each label one color, fixed by its sorted position in the category vocabulary.
+
+    Without categories, the vocabulary is the document's own object labels.
+    """
+    labels = sorted(categories or {a.label for a in document.annotations if a.kind != "label"})
+    return COLORS[labels.index(label) % len(COLORS)] if label in labels else COLORS[0]
+
+
+def dots(draw: ImageDraw.ImageDraw, points: list, width: int, color: str = COLORS[0]) -> None:
+    """Draw line points joined by a colored line, each marked by a white dot with a colored rim."""
+    r = max(2, width // 1000)
+    draw.line(points, fill=color, width=1)
+    for x, y in points:
+        draw.ellipse((x - r, y - r, x + r, y + r), fill="white", outline=color, width=1)
 
 
 def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image:
@@ -22,15 +41,16 @@ def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image
             draw.text(
                 (2, y + 2), str(y), font=font, fill="black", stroke_width=1, stroke_fill="white"
             )
-    palette = [(14, 165, 233), (234, 88, 12), (139, 92, 246), (22, 163, 74)]
     label_y = 24 if grid else 4
-    for index, annotation in enumerate(document.annotations):
-        color = palette[index % len(palette)]
+    for annotation in document.annotations:
+        color = ImageColor.getrgb(label_color(annotation.label, document))
         if annotation.kind == "box":
             draw.rectangle(annotation.points, outline=(*color, 255), width=3)
         elif annotation.kind == "polygon":
             draw.polygon(annotation.points, fill=(*color, 65))
             draw.line(annotation.points + annotation.points[:1], fill=(*color, 255), width=3)
+        elif annotation.kind == "line":
+            dots(draw, annotation.points, image.width, label_color(annotation.label, document))
         if annotation.points:
             x, y = annotation.points[0]
             y = max(0, y - 20)

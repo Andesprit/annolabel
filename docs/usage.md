@@ -100,6 +100,7 @@ Rules:
 - Polygons require at least three distinct vertices, nonzero area, and no self-intersections. Do not repeat the first vertex at the end. Either winding direction is accepted.
 - A polygon-only object automatically receives its enclosing box in the batch workflows.
 - `--geometry both` and `--geometry polygons` require a polygon for each submitted object. `--geometry boxes` permits box-only objects; it does not forbid polygons.
+- `--geometry lines` requires a `line` for each submitted object: at least two distinct points in drawing order, for open curves such as a liquid level. A line object may also carry a box or polygon.
 - Classifications-only submissions use `objects: []`. The geometry mode does not require objects to exist.
 - Keys identify individual objects. Two objects with the same label need different keys.
 - Do not include hashes, revision strings, annotation IDs, or output paths in `submit` JSON. The task handle manages them.
@@ -210,7 +211,7 @@ These are separate image operations, not one atomic multi-image transaction. Che
 annolabel export /data/images --output /data/datasets/labeled
 ```
 
-COCO is currently the only built-in training format; `--format coco` is optional. Folder export discovers `*.labels.json` recursively and excludes images without sidecars. A direct image export may contain zero annotations.
+COCO is the default format; `--format coco` is optional. Line objects export as COCO keypoints. `--format labelstudio --document-root <DIR>` instead writes `tasks.json` and a matching `config.xml` for Label Studio, with the annotations as editable predictions. Sources must lie inside `<DIR>`, the `LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT` of the Label Studio server. Folder export discovers `*.labels.json` recursively and excludes images without sidecars. A direct image export may contain zero annotations.
 
 ```text
 labeled/

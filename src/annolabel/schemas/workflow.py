@@ -18,13 +18,14 @@ class ObjectInput(StrictModel):
     label: str = Field(min_length=1)
     box: tuple[FiniteFloat, FiniteFloat, FiniteFloat, FiniteFloat] | None = None
     polygon: list[Point] | None = None
+    line: list[Point] | None = None
     note: str | None = None
     view_id: str | None = None
 
     @model_validator(mode="after")
     def has_geometry(self) -> "ObjectInput":
-        if self.box is None and self.polygon is None:
-            raise ValueError("object needs a box or polygon")
+        if self.box is None and self.polygon is None and self.line is None:
+            raise ValueError("object needs a box, polygon or line")
         if not self.key.strip() or not self.label.strip():
             raise ValueError("object key and label cannot be blank")
         return self
@@ -61,7 +62,7 @@ class Rules(StrictModel):
         "Label every prominent object; describe visible appearance and note uncertainty."
     )
     categories: list[str] | None = None
-    geometry: Literal["boxes", "polygons", "both"] = "both"
+    geometry: Literal["boxes", "polygons", "both", "lines"] = "both"
     boundary_policy: Literal["visible"] = "visible"
 
     @model_validator(mode="after")

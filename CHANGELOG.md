@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added open line annotations (`--geometry lines`) for curves such as liquid levels, drawn as a colored line with white point dots.
+- Added Label Studio export (`--format labelstudio`) with editable pre-annotations and a matching labeling config.
+- Colored annotations by label instead of by object, using the same colors as the Label Studio export.
+
 ## 0.5.1 — 2026-09-09
 
 - Licensed AnnoLabel under MIT, with license and maintainer metadata in distributions.

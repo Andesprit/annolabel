@@ -11,11 +11,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from annolabel.modules.batch import snapshot
+from annolabel.modules.images import dots, label_color
 from annolabel.schemas.annotations import Document
 from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
 MARGIN_X, MARGIN_Y = 58, 50
-COLORS = ["#f43f5e", "#00a6ff", "#f59e0b", "#16a34a", "#a855f7", "#06b6d4"]
 
 
 def _font(size: int = 15) -> ImageFont.FreeTypeFont:
@@ -64,18 +64,24 @@ def _ruler(image: Image.Image, rect: tuple, title: str, grid: bool = False) -> I
     return canvas
 
 
-def _outlined(image: Image.Image, document: Document, keys: set[str] | None = None) -> Image.Image:
+def _outlined(
+    image: Image.Image,
+    document: Document,
+    keys: set[str] | None = None,
+    categories: list[str] | None = None,
+) -> Image.Image:
     result = image.copy()
     draw = ImageDraw.Draw(result)
-    ids = list(dict.fromkeys(a.object_id for a in document.annotations if a.object_id is not None))
     for a in document.annotations:
         if a.object_id is None or (keys is not None and a.object_id not in keys):
             continue
-        color = COLORS[ids.index(a.object_id) % len(COLORS)]
+        color = label_color(a.label, document, categories)
         if a.kind == "polygon":
             draw.line(a.points + a.points[:1], fill=color, width=2)
         elif a.kind == "box":
             draw.rectangle(a.points, outline=color, width=1)
+        elif a.kind == "line":
+            dots(draw, a.points, image.width, color)
     return result
 
 
@@ -109,8 +115,10 @@ def write_bundle(
             key, label = item["key"], item["label"]
             box = item.get("box")
             if box is None:
-                xs, ys = zip(*item["polygon"])
-                box = (min(xs), min(ys), max(xs), max(ys))
+                xs, ys = zip(*(item.get("polygon") or item["line"]))
+
+                # A flat line still needs a crop with height.
+                box = (min(xs), max(0, min(ys) - 1), max(xs), min(image.height, max(ys) + 1))
         x1, y1, x2, y2 = box
         if not (0 <= x1 < x2 <= image.width and 0 <= y1 < y2 <= image.height):
             raise ValueError(f"region {key}: box must be ordered and inside the source image")
@@ -141,7 +149,7 @@ def write_bundle(
         )
         if short:
             # One coordinate frame: PNG pixels are oriented source pixels, including at the edges.
-            _outlined(image, document).save(temporary / "view.png")
+            _outlined(image, document, categories=rules.categories).save(temporary / "view.png")
             packet.views.append(
                 View(
                     id="view",
@@ -168,7 +176,7 @@ def write_bundle(
                 )
             )
         overview = _ruler(
-            _outlined(image, document),
+            _outlined(image, document, categories=rules.categories),
             rect,
             "Overview: thin boxes and polygons; coordinates are ORIGINAL pixels",
         )
@@ -190,7 +198,7 @@ def write_bundle(
                 (10, overview.height + 6 + line_no * 22),
                 line,
                 font=_font(),
-                fill=COLORS[obj_no % len(COLORS)],
+                fill=label_color(objects[obj_no]["label"], document, rules.categories),
             )
         page.save(temporary / "overview.png")
         packet.views.append(
@@ -213,9 +221,9 @@ def write_bundle(
                     max(1, round(original.width * factor)),
                     max(1, round(original.height * factor)),
                 )
-                annotated = _outlined(image, document, {key} if regions is None else None).crop(
-                    crop
-                )
+                annotated = _outlined(
+                    image, document, {key} if regions is None else None, rules.categories
+                ).crop(crop)
                 title_lines = textwrap.wrap(
                     f"{index + 1}. {key}: {label} | ruler labels are ORIGINAL coordinates", 90
                 )
@@ -266,6 +274,7 @@ def write_bundle(
             "x increases right; y increases down; bounds include width/height outer edges. Do not use resized viewer pixels.\n"
             "Edit annotations.json as a COMPLETE snapshot: omitted objects/classes are removed. Keep image_sha256 and base_revision.\n"
             "Each object needs a unique stable key (obj1, obj2...), label, and box [x1,y1,x2,y2] and/or polygon [[x,y],...].\n"
+            "or line [[x,y],...]: ordered points along a level or edge, drawn as dots.\n"
             "A polygon-only object gets its enclosing box automatically. Include both if the task requires a separately judged box.\n"
             "Trace ordered visible boundary vertices; no repeated first point, self-intersections, holes or disconnected parts.\n"
             "Objects never share identity just because labels match. Use note for uncertainty.\n"
@@ -285,6 +294,7 @@ def write_bundle(
                 "The top-left image corner is (0,0); x increases right and y down. Use source pixels, not resized viewer pixels.\n"
                 "Submit task.json --file JSON_OR_- with classifications and objects as a COMPLETE snapshot.\n"
                 "Each object needs a stable unique key, label, and box [x1,y1,x2,y2] and/or polygon [[x,y],...].\n"
+                "or line [[x,y],...]: ordered points along a level or edge, drawn as dots.\n"
                 "A polygon alone gets its enclosing box. Trace ordered boundary vertices without repeating the first point.\n"
                 "The task handle manages hashes and revisions; do not copy them into submissions.\n"
                 "Open the returned view to review outlines in the same source coordinate frame. Keep all unchanged objects\n"

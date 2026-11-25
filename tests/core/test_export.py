@@ -200,3 +200,59 @@ def test_injected_reader_failure_during_export_leaves_no_dataset(
     assert service.load.call_count == 2
     assert not output.exists()
     assert not list(tmp_path.glob(".annolabel-export-*"))
+
+
+def test_labelstudio_export_points_at_sources_with_percent_geometry(tmp_path: Path) -> None:
+    source = source_at(tmp_path / "data/photo.png")
+    cli("box", source, "--label", "cap", "--xyxy", 10, 20, 50, 60)
+    task = cli("task", source, "-o", tmp_path / "task", "--geometry", "boxes")
+    payload = json.loads((Path(task["task"]).parent / "annotations.json").read_text())
+    payload["objects"].append(
+        {"key": "v1", "label": "level", "line": [[10, 40], [50, 40], [90, 44]]}
+    )
+    cli(
+        "submit",
+        task["task"],
+        "--file",
+        "-",
+        stdin=json.dumps({"classifications": [], "objects": payload["objects"]}),
+    )
+    result = cli(
+        "export",
+        source,
+        "-o",
+        tmp_path / "ls",
+        "--format",
+        "labelstudio",
+        "--document-root",
+        tmp_path,
+    )
+    assert result["format"] == "labelstudio" and result["images"] == 1
+    tasks = json.loads(Path(result["tasks"]).read_text())
+    assert tasks[0]["data"]["image"] == "/data/local-files/?d=data/photo.png"
+    results = {r["type"]: r for r in tasks[0]["predictions"][0]["result"]}
+    assert results["rectanglelabels"]["value"] == {
+        "x": 10,
+        "y": 25,
+        "width": 40,
+        "height": 50,
+        "rotation": 0,
+        "rectanglelabels": ["cap"],
+    }
+    line = results["vectorlabels"]["value"]
+    assert [(v["x"], v["y"]) for v in line["vertices"]] == [(10, 50), (50, 50), (90, 55)]
+    assert line["closed"] is False and line["vectorlabels"] == ["level"]
+    config = Path(result["config"]).read_text()
+    assert '<Label value="level" background="#00a6ff"/>' in config and 'name="line"' in config
+    outside = cli(
+        "export",
+        source,
+        "-o",
+        tmp_path / "ls2",
+        "--format",
+        "labelstudio",
+        "--document-root",
+        tmp_path / "elsewhere",
+        success=False,
+    )
+    assert "document root" in outside["error"]

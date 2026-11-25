@@ -142,3 +142,29 @@ def test_one_pass_task_and_duplicate_object_keys(source: Path, tmp_path: Path) -
     result = cli("submit", initial["task"], "--file", payload)
     assert result["passes_left"] == 0
     assert cli("submit", result["task"], "--file", payload, success=False)["code"] == "PASS_LIMIT"
+
+
+def test_line_points_render_as_dots_and_export_keypoints(source: Path, tmp_path: Path) -> None:
+    initial = cli("task", source, "-o", tmp_path / "task", "--geometry", "lines")
+    line = [[10, 30], [30, 30], [50, 30]]
+    missing = save(
+        tmp_path / "box.json",
+        {
+            "classifications": [],
+            "objects": [{"key": "v1", "label": "level", "box": [10, 20, 50, 40]}],
+        },
+    )
+    assert cli("submit", initial["task"], "--file", missing, success=False)["code"]
+    payload = save(
+        tmp_path / "line.json",
+        {"classifications": [], "objects": [{"key": "v1", "label": "level", "line": line}]},
+    )
+    first = cli("submit", initial["task"], "--file", payload)
+    with Image.open(initial["view"]) as a, Image.open(first["view"]) as b:
+        assert b.getpixel((20, 30)) == (244, 63, 94) != a.getpixel((20, 30))  # joining line
+        assert b.getpixel((30, 30)) == (255, 255, 255)  # dot centre
+    record = json.loads(
+        (Path(cli("export", source, "-o", tmp_path / "coco")["annotations"])).read_text()
+    )["annotations"][0]
+    assert record["keypoints"] == [10, 30, 2, 30, 30, 2, 50, 30, 2]
+    assert record["num_keypoints"] == 3 and record["bbox"] == [10, 30, 40, 0]

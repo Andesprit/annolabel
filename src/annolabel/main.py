@@ -26,7 +26,7 @@ def _parser() -> argparse.ArgumentParser:
     task.add_argument("--output", "-o", required=True)
     task.add_argument("--instructions")
     task.add_argument("--categories")
-    task.add_argument("--geometry", choices=["boxes", "polygons", "both"], default="both")
+    task.add_argument("--geometry", choices=["boxes", "polygons", "both", "lines"], default="both")
     task.add_argument("--max-passes", type=int, choices=[1, 2], default=2)
     submit = commands.add_parser(
         "submit", help="Submit classifications and objects against a saved task handle"
@@ -50,7 +50,9 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument(
         "--categories", help="JSON array of allowed object labels (scene classes are separate)"
     )
-    prepare.add_argument("--geometry", choices=["boxes", "polygons", "both"], default="both")
+    prepare.add_argument(
+        "--geometry", choices=["boxes", "polygons", "both", "lines"], default="both"
+    )
     apply = commands.add_parser(
         "apply", help="Atomically replace a complete annotation snapshot and create review views"
     )
@@ -88,7 +90,12 @@ def _parser() -> argparse.ArgumentParser:
     export = commands.add_parser("export", help="Export a training dataset (default: COCO)")
     export.add_argument("source", help="An image or folder containing annotation sidecars")
     export.add_argument("--output", "-o", required=True, help="New dataset directory")
-    export.add_argument("--format", choices=["coco"], default="coco")
+    export.add_argument("--format", choices=["coco", "labelstudio"], default="coco")
+    export.add_argument(
+        "--document-root",
+        default=".",
+        help="labelstudio only: LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT containing the sources",
+    )
     export.add_argument(
         "--categories", help="Ordered JSON label list; reuse across exports for stable IDs"
     )
@@ -203,7 +210,13 @@ def main() -> None:
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         if args.command == "export":
-            result = export_dataset(args.source, args.output, args.categories)
+            result = export_dataset(
+                args.source,
+                args.output,
+                args.categories,
+                fmt=args.format,
+                document_root=args.document_root,
+            )
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         kit = AnnoLabel(args.image)

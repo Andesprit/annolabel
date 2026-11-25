@@ -85,7 +85,7 @@ def batch_document(batch: Batch, document: Document, packet: Packet | None = Non
             raise ValueError(
                 f"object {obj.key}: label {obj.label!r} is not in the allowed categories"
             )
-        box, polygon = obj.box, obj.polygon
+        box, polygon, line = obj.box, obj.polygon, obj.line
         if obj.view_id is not None:
             view = next((v for v in packet.views if v.id == obj.view_id), None) if packet else None
             if view is None:
@@ -103,14 +103,18 @@ def batch_document(batch: Batch, document: Document, packet: Packet | None = Non
 
             box = (*source_point(box[:2]), *source_point(box[2:])) if box is not None else None
             polygon = [source_point(p) for p in polygon] if polygon is not None else None
+            line = [source_point(p) for p in line] if line is not None else None
         if box is None and polygon:
             xs, ys = zip(*polygon)
             box = (min(xs), min(ys), max(xs), max(ys))
         if packet and packet.rules.geometry in {"both", "polygons"} and polygon is None:
             raise ValueError(f"object {obj.key}: this task requires a polygon")
+        if packet and packet.rules.geometry == "lines" and line is None:
+            raise ValueError(f"object {obj.key}: this task requires a line")
         for kind, points in [
             ("box", [box[:2], box[2:]] if box is not None else None),
             ("polygon", polygon),
+            ("line", line),
         ]:
             if points is not None:
                 annotations.append(
