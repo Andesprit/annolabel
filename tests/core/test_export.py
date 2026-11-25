@@ -243,7 +243,7 @@ def test_labelstudio_export_points_at_sources_with_percent_geometry(tmp_path: Pa
     assert [(v["x"], v["y"]) for v in line["vertices"]] == [(10, 50), (50, 50), (90, 55)]
     assert line["closed"] is False and line["vectorlabels"] == ["level"]
     config = Path(result["config"]).read_text()
-    assert '<Label value="level"/>' in config and 'name="line"' in config
+    assert '<Label value="level" background="#00a6ff"/>' in config and 'name="line"' in config
     outside = cli(
         "export",
         source,

@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
+from annolabel.modules.images import COLORS
 from annolabel.schemas.annotations import Annotation, Document
 
 TAGS = {
@@ -72,12 +73,18 @@ def export_labelstudio(items: list[tuple[Path, Document]], output: str, document
                 "predictions": [{"model_version": "annolabel", "result": results}],
             }
         )
+    # Same label-to-color mapping as the AnnoLabel views.
+    ordered = sorted(set().union(*labels.values()))
     lines = ["<View>", '  <Image name="image" value="$image" zoomControl="true"/>']
     for kind, (tag, name, _) in TAGS.items():
         if labels[kind]:
             extra = ' closable="false" pointSize="small"' if kind == "line" else ""
             lines.append(f'  <{tag} name="{name}" toName="image"{extra}>')
-            lines += [f"    <Label value={quoteattr(v)}/>" for v in sorted(labels[kind])]
+            lines += [
+                f"    <Label value={quoteattr(v)} "
+                f'background="{COLORS[ordered.index(v) % len(COLORS)]}"/>'
+                for v in sorted(labels[kind])
+            ]
             lines.append(f"  </{tag}>")
     if classes:
         lines.append('  <Choices name="class" toName="image" choice="multiple">')

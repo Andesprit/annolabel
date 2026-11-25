@@ -11,12 +11,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from annolabel.modules.batch import snapshot
-from annolabel.modules.images import dots
+from annolabel.modules.images import dots, label_color
 from annolabel.schemas.annotations import Document
 from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
 MARGIN_X, MARGIN_Y = 58, 50
-COLORS = ["#f43f5e", "#00a6ff", "#f59e0b", "#16a34a", "#a855f7", "#06b6d4"]
 
 
 def _font(size: int = 15) -> ImageFont.FreeTypeFont:
@@ -68,17 +67,16 @@ def _ruler(image: Image.Image, rect: tuple, title: str, grid: bool = False) -> I
 def _outlined(image: Image.Image, document: Document, keys: set[str] | None = None) -> Image.Image:
     result = image.copy()
     draw = ImageDraw.Draw(result)
-    ids = list(dict.fromkeys(a.object_id for a in document.annotations if a.object_id is not None))
     for a in document.annotations:
         if a.object_id is None or (keys is not None and a.object_id not in keys):
             continue
-        color = COLORS[ids.index(a.object_id) % len(COLORS)]
+        color = label_color(a.label, document)
         if a.kind == "polygon":
             draw.line(a.points + a.points[:1], fill=color, width=2)
         elif a.kind == "box":
             draw.rectangle(a.points, outline=color, width=1)
         elif a.kind == "line":
-            dots(draw, a.points, image.width)
+            dots(draw, a.points, image.width, color)
     return result
 
 
@@ -195,7 +193,7 @@ def write_bundle(
                 (10, overview.height + 6 + line_no * 22),
                 line,
                 font=_font(),
-                fill=COLORS[obj_no % len(COLORS)],
+                fill=label_color(objects[obj_no]["label"], document),
             )
         page.save(temporary / "overview.png")
         packet.views.append(
