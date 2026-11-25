@@ -90,7 +90,12 @@ def _parser() -> argparse.ArgumentParser:
     export = commands.add_parser("export", help="Export a training dataset (default: COCO)")
     export.add_argument("source", help="An image or folder containing annotation sidecars")
     export.add_argument("--output", "-o", required=True, help="New dataset directory")
-    export.add_argument("--format", choices=["coco"], default="coco")
+    export.add_argument("--format", choices=["coco", "labelstudio"], default="coco")
+    export.add_argument(
+        "--document-root",
+        default=".",
+        help="labelstudio only: LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT containing the sources",
+    )
     export.add_argument(
         "--categories", help="Ordered JSON label list; reuse across exports for stable IDs"
     )
@@ -205,7 +210,13 @@ def main() -> None:
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         if args.command == "export":
-            result = export_dataset(args.source, args.output, args.categories)
+            result = export_dataset(
+                args.source,
+                args.output,
+                args.categories,
+                fmt=args.format,
+                document_root=args.document_root,
+            )
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return
         kit = AnnoLabel(args.image)

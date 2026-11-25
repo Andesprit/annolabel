@@ -5,6 +5,7 @@ from pathlib import Path
 
 from annolabel.core.annolabel import AnnoLabel
 from annolabel.modules.coco import export_coco
+from annolabel.modules.labelstudio import export_labelstudio
 from annolabel.services.images.base import ImageServiceBase
 from annolabel.services.images.local import LocalImageService
 
@@ -14,6 +15,8 @@ def export_dataset(
     output: str,
     categories_file: str | None = None,
     *,
+    fmt: str = "coco",
+    document_root: str = ".",
     image_service: ImageServiceBase | None = None,
 ) -> dict:
     """Export one image or recursively discovered annotation sidecars.
@@ -21,6 +24,8 @@ def export_dataset(
     :param source: Image or directory containing sidecars.
     :param output: New dataset directory.
     :param categories_file: Optional ordered category vocabulary.
+    :param fmt: coco, or labelstudio for tasks that load sources from document_root.
+    :param document_root: Label Studio local files root, used only by labelstudio.
     :param image_service: Image reader; defaults to the local Pillow service.
     :returns: COCO export receipt and dataset paths.
     """
@@ -42,6 +47,8 @@ def export_dataset(
         seen.add(resolved)
         kit = AnnoLabel(str(resolved), image_service=service)
         items.append((kit.path, kit.document))
+    if fmt == "labelstudio":
+        return export_labelstudio(items, output, document_root)
     categories = None
     if categories_file:
         categories = json.loads(Path(categories_file).expanduser().read_text())
