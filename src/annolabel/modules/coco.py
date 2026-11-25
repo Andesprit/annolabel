@@ -86,7 +86,8 @@ def export_coco(
             for object_id, members in objects.items():
                 polygon = next((a for a in members if a.kind == "polygon"), None)
                 box = next((a for a in members if a.kind == "box"), None)
-                points = box.points if box else polygon.points
+                line = next((a for a in members if a.kind == "line"), None)
+                points = (box or polygon or line).points
                 xs, ys = zip(*points)
                 x, y, width, height = min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
                 annotation_id = len(coco["annotations"]) + 1
@@ -104,6 +105,9 @@ def export_coco(
                     record["area"] = (
                         abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(p, p[1:] + p[:1]))) / 2
                     )
+                if line:
+                    record["keypoints"] = [v for x, y in line.points for v in (x, y, 2)]
+                    record["num_keypoints"] = len(line.points)
                 coco["annotations"].append(record)
                 provenance["objects"].append(
                     {
@@ -132,6 +136,7 @@ def export_coco(
             "Image root: images/default/ (COCO file_name is relative to this root).\n"
             "Images are losslessly encoded PNGs in the annotation coordinate orientation.\n"
             "One record per object. Polygons include segmentation; box-only objects omit it.\n"
+            "Line objects carry ordered points as COCO keypoints (visibility 2).\n"
             "Area is continuous polygon area, or box area for box-only objects.\n"
             "Whole-image labels are in classifications.csv; provenance retains IDs and notes.\n"
             "No train/validation split is inferred. Reuse categories.json for consistent class IDs.\n"

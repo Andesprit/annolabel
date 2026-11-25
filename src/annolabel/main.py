@@ -26,7 +26,7 @@ def _parser() -> argparse.ArgumentParser:
     task.add_argument("--output", "-o", required=True)
     task.add_argument("--instructions")
     task.add_argument("--categories")
-    task.add_argument("--geometry", choices=["boxes", "polygons", "both"], default="both")
+    task.add_argument("--geometry", choices=["boxes", "polygons", "both", "lines"], default="both")
     task.add_argument("--max-passes", type=int, choices=[1, 2], default=2)
     submit = commands.add_parser(
         "submit", help="Submit classifications and objects against a saved task handle"
@@ -50,7 +50,9 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument(
         "--categories", help="JSON array of allowed object labels (scene classes are separate)"
     )
-    prepare.add_argument("--geometry", choices=["boxes", "polygons", "both"], default="both")
+    prepare.add_argument(
+        "--geometry", choices=["boxes", "polygons", "both", "lines"], default="both"
+    )
     apply = commands.add_parser(
         "apply", help="Atomically replace a complete annotation snapshot and create review views"
     )

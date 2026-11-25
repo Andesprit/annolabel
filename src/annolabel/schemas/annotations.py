@@ -28,12 +28,12 @@ def _intersects(a: Point, b: Point, c: Point, d: Point) -> bool:
 
 
 class Annotation(BaseModel):
-    """One image label, bounding box, or simple polygon."""
+    """One image label, bounding box, simple polygon, or open point line."""
 
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1)
     object_id: str | None = Field(default=None, min_length=1)
-    kind: Literal["label", "box", "polygon"]
+    kind: Literal["label", "box", "polygon", "line"]
     label: str = Field(min_length=1)
     points: list[Point] = Field(default_factory=list)
     note: str | None = None
@@ -53,6 +53,8 @@ class Annotation(BaseModel):
         if self.kind == "box":
             if len(p) != 2 or p[0][0] >= p[1][0] or p[0][1] >= p[1][1]:
                 raise ValueError("box requires x1 < x2 and y1 < y2")
+        if self.kind == "line" and (len(p) < 2 or len(set(p)) != len(p)):
+            raise ValueError("line needs at least two distinct ordered points")
         if self.kind == "polygon":
             if len(p) < 3 or len(set(p)) != len(p):
                 raise ValueError(
@@ -118,7 +120,7 @@ class Document(BaseModel):
             if len({a.label for a in members}) != 1:
                 raise ValueError(f"object {object_id} has conflicting labels")
             if len({a.kind for a in members}) != len(members):
-                raise ValueError(f"object {object_id} can have only one box and one polygon")
+                raise ValueError(f"object {object_id} can have only one box, polygon and line")
             box = next((a for a in members if a.kind == "box"), None)
             polygon = next((a for a in members if a.kind == "polygon"), None)
             if box and polygon:

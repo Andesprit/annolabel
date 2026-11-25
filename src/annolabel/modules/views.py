@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from annolabel.modules.batch import snapshot
+from annolabel.modules.images import dots
 from annolabel.schemas.annotations import Document
 from annolabel.schemas.workflow import Batch, Packet, Region, Rules, View
 
@@ -76,6 +77,8 @@ def _outlined(image: Image.Image, document: Document, keys: set[str] | None = No
             draw.line(a.points + a.points[:1], fill=color, width=2)
         elif a.kind == "box":
             draw.rectangle(a.points, outline=color, width=1)
+        elif a.kind == "line":
+            dots(draw, a.points, image.width)
     return result
 
 
@@ -109,8 +112,10 @@ def write_bundle(
             key, label = item["key"], item["label"]
             box = item.get("box")
             if box is None:
-                xs, ys = zip(*item["polygon"])
-                box = (min(xs), min(ys), max(xs), max(ys))
+                xs, ys = zip(*(item.get("polygon") or item["line"]))
+
+                # A flat line still needs a crop with height.
+                box = (min(xs), max(0, min(ys) - 1), max(xs), min(image.height, max(ys) + 1))
         x1, y1, x2, y2 = box
         if not (0 <= x1 < x2 <= image.width and 0 <= y1 < y2 <= image.height):
             raise ValueError(f"region {key}: box must be ordered and inside the source image")
@@ -266,6 +271,7 @@ def write_bundle(
             "x increases right; y increases down; bounds include width/height outer edges. Do not use resized viewer pixels.\n"
             "Edit annotations.json as a COMPLETE snapshot: omitted objects/classes are removed. Keep image_sha256 and base_revision.\n"
             "Each object needs a unique stable key (obj1, obj2...), label, and box [x1,y1,x2,y2] and/or polygon [[x,y],...].\n"
+            "or line [[x,y],...]: ordered points along a level or edge, drawn as dots.\n"
             "A polygon-only object gets its enclosing box automatically. Include both if the task requires a separately judged box.\n"
             "Trace ordered visible boundary vertices; no repeated first point, self-intersections, holes or disconnected parts.\n"
             "Objects never share identity just because labels match. Use note for uncertainty.\n"
@@ -285,6 +291,7 @@ def write_bundle(
                 "The top-left image corner is (0,0); x increases right and y down. Use source pixels, not resized viewer pixels.\n"
                 "Submit task.json --file JSON_OR_- with classifications and objects as a COMPLETE snapshot.\n"
                 "Each object needs a stable unique key, label, and box [x1,y1,x2,y2] and/or polygon [[x,y],...].\n"
+                "or line [[x,y],...]: ordered points along a level or edge, drawn as dots.\n"
                 "A polygon alone gets its enclosing box. Trace ordered boundary vertices without repeating the first point.\n"
                 "The task handle manages hashes and revisions; do not copy them into submissions.\n"
                 "Open the returned view to review outlines in the same source coordinate frame. Keep all unchanged objects\n"

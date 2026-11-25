@@ -5,6 +5,15 @@ from PIL import Image, ImageDraw, ImageFont
 from annolabel.schemas.annotations import Document
 
 
+def dots(draw: ImageDraw.ImageDraw, points: list, width: int) -> None:
+    """Draw line points as red dots with a white rim, scaled to the image width."""
+    r = max(3, width // 500)
+    for x, y in points:
+        draw.ellipse(
+            (x - r, y - r, x + r, y + r), fill="red", outline="white", width=max(1, r // 3)
+        )
+
+
 def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image:
     """Draw IDs, labels, boxes, polygons, and an optional pixel grid."""
     canvas = image.convert("RGBA")
@@ -31,6 +40,8 @@ def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image
         elif annotation.kind == "polygon":
             draw.polygon(annotation.points, fill=(*color, 65))
             draw.line(annotation.points + annotation.points[:1], fill=(*color, 255), width=3)
+        elif annotation.kind == "line":
+            dots(draw, annotation.points, image.width)
         if annotation.points:
             x, y = annotation.points[0]
             y = max(0, y - 20)
