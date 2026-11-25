@@ -161,7 +161,8 @@ def test_line_points_render_as_dots_and_export_keypoints(source: Path, tmp_path:
     )
     first = cli("submit", initial["task"], "--file", payload)
     with Image.open(initial["view"]) as a, Image.open(first["view"]) as b:
-        assert b.getpixel((30, 30)) == (255, 0, 0) != a.getpixel((30, 30))
+        assert b.getpixel((20, 30)) == (255, 0, 0) != a.getpixel((20, 30))  # joining line
+        assert b.getpixel((30, 30)) == (255, 255, 255)  # dot centre
     record = json.loads(
         (Path(cli("export", source, "-o", tmp_path / "coco")["annotations"])).read_text()
     )["annotations"][0]
