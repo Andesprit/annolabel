@@ -7,12 +7,10 @@ from annolabel.schemas.annotations import Document
 
 def dots(draw: ImageDraw.ImageDraw, points: list, width: int) -> None:
     """Draw line points joined by a red line, each marked by a white dot with a red rim."""
-    r = max(3, width // 500)
-    draw.line(points, fill="red", width=max(2, r // 2))
+    r = max(2, width // 1000)
+    draw.line(points, fill="red", width=1)
     for x, y in points:
-        draw.ellipse(
-            (x - r, y - r, x + r, y + r), fill="white", outline="red", width=max(1, r // 3)
-        )
+        draw.ellipse((x - r, y - r, x + r, y + r), fill="white", outline="red", width=1)
 
 
 def render(image: Image.Image, document: Document, grid: int = 0) -> Image.Image:
