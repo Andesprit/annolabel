@@ -7,9 +7,12 @@ from annolabel.schemas.annotations import Document
 COLORS = ["#f43f5e", "#00a6ff", "#f59e0b", "#16a34a", "#a855f7", "#06b6d4"]
 
 
-def label_color(label: str, document: Document) -> str:
-    """Give each label one color, fixed by its sorted position among object labels."""
-    labels = sorted({a.label for a in document.annotations if a.kind != "label"})
+def label_color(label: str, document: Document, categories: list[str] | None = None) -> str:
+    """Give each label one color, fixed by its sorted position in the category vocabulary.
+
+    Without categories, the vocabulary is the document's own object labels.
+    """
+    labels = sorted(categories or {a.label for a in document.annotations if a.kind != "label"})
     return COLORS[labels.index(label) % len(COLORS)] if label in labels else COLORS[0]
 
 

@@ -64,13 +64,18 @@ def _ruler(image: Image.Image, rect: tuple, title: str, grid: bool = False) -> I
     return canvas
 
 
-def _outlined(image: Image.Image, document: Document, keys: set[str] | None = None) -> Image.Image:
+def _outlined(
+    image: Image.Image,
+    document: Document,
+    keys: set[str] | None = None,
+    categories: list[str] | None = None,
+) -> Image.Image:
     result = image.copy()
     draw = ImageDraw.Draw(result)
     for a in document.annotations:
         if a.object_id is None or (keys is not None and a.object_id not in keys):
             continue
-        color = label_color(a.label, document)
+        color = label_color(a.label, document, categories)
         if a.kind == "polygon":
             draw.line(a.points + a.points[:1], fill=color, width=2)
         elif a.kind == "box":
@@ -144,7 +149,7 @@ def write_bundle(
         )
         if short:
             # One coordinate frame: PNG pixels are oriented source pixels, including at the edges.
-            _outlined(image, document).save(temporary / "view.png")
+            _outlined(image, document, categories=rules.categories).save(temporary / "view.png")
             packet.views.append(
                 View(
                     id="view",
@@ -171,7 +176,7 @@ def write_bundle(
                 )
             )
         overview = _ruler(
-            _outlined(image, document),
+            _outlined(image, document, categories=rules.categories),
             rect,
             "Overview: thin boxes and polygons; coordinates are ORIGINAL pixels",
         )
@@ -193,7 +198,7 @@ def write_bundle(
                 (10, overview.height + 6 + line_no * 22),
                 line,
                 font=_font(),
-                fill=label_color(objects[obj_no]["label"], document),
+                fill=label_color(objects[obj_no]["label"], document, rules.categories),
             )
         page.save(temporary / "overview.png")
         packet.views.append(
@@ -216,9 +221,9 @@ def write_bundle(
                     max(1, round(original.width * factor)),
                     max(1, round(original.height * factor)),
                 )
-                annotated = _outlined(image, document, {key} if regions is None else None).crop(
-                    crop
-                )
+                annotated = _outlined(
+                    image, document, {key} if regions is None else None, rules.categories
+                ).crop(crop)
                 title_lines = textwrap.wrap(
                     f"{index + 1}. {key}: {label} | ruler labels are ORIGINAL coordinates", 90
                 )
